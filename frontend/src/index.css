@@ -1,0 +1,118 @@
+@import "tailwindcss";
+
+/* ═══════════════════════════════════════════════════════════════
+   vMix ↔ Yamaha TF3 Bridge — AV Control Room Dark Theme
+   ═══════════════════════════════════════════════════════════════ */
+
+@theme {
+  /* ── Surface Colors ────────────────────────────────────────── */
+  --color-surface-900: #0a0a0f;
+  --color-surface-800: #0f1117;
+  --color-surface-700: #151820;
+  --color-surface-600: #1c2030;
+  --color-surface-500: #252a3a;
+
+  /* ── Accent Colors ─────────────────────────────────────────── */
+  --color-accent-green: #00ff88;
+  --color-accent-cyan: #00d4ff;
+  --color-accent-red: #ff3366;
+  --color-accent-amber: #ffaa00;
+  --color-accent-purple: #a855f7;
+
+  /* ── Text Colors ───────────────────────────────────────────── */
+  --color-text-primary: #e8eaed;
+  --color-text-secondary: #9aa0b0;
+  --color-text-muted: #5a6070;
+
+  /* ── Border Colors ─────────────────────────────────────────── */
+  --color-border-subtle: #1e2235;
+  --color-border-active: #2a3050;
+
+  /* ── Status Glow ───────────────────────────────────────────── */
+  --color-glow-green: rgba(0, 255, 136, 0.15);
+  --color-glow-red: rgba(255, 51, 102, 0.15);
+  --color-glow-cyan: rgba(0, 212, 255, 0.15);
+
+  /* ── Typography ────────────────────────────────────────────── */
+  --font-sans: 'Inter', 'Segoe UI', system-ui, -apple-system, sans-serif;
+  --font-mono: 'JetBrains Mono', 'Cascadia Code', 'Fira Code', monospace;
+}
+
+/* ── Global Reset ──────────────────────────────────────────────── */
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html {
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+body {
+  margin: 0;
+  padding: 0;
+  background-color: var(--color-surface-900);
+  color: var(--color-text-primary);
+  min-height: 100vh;
+}
+
+/* ── Scrollbar Styling ─────────────────────────────────────────── */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: var(--color-surface-800);
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--color-surface-500);
+  border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--color-surface-600);
+}
+
+/* ── Pulse Animation for Status Indicators ─────────────────────── */
+@keyframes pulse-green {
+  0%, 100% {
+    box-shadow: 0 0 4px var(--color-accent-green), 0 0 8px var(--color-glow-green);
+  }
+  50% {
+    box-shadow: 0 0 8px var(--color-accent-green), 0 0 20px var(--color-glow-green);
+  }
+}
+
+@keyframes pulse-red {
+  0%, 100% {
+    box-shadow: 0 0 4px var(--color-accent-red), 0 0 8px var(--color-glow-red);
+  }
+  50% {
+    box-shadow: 0 0 8px var(--color-accent-red), 0 0 20px var(--color-glow-red);
+  }
+}
+
+.status-connected {
+  animation: pulse-green 2s ease-in-out infinite;
+}
+
+.status-disconnected {
+  animation: pulse-red 1.5s ease-in-out infinite;
+}
+
+/* ── Tooltip Animation ─────────────────────────────────────────── */
+@keyframes tooltipIn {
+  from {
+    opacity: 0;
+    transform: translateX(-50%) translateY(-4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(-50%) translateY(0);
+  }
+}
