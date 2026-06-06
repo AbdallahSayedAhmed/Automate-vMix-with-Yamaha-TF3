@@ -79,6 +79,7 @@ try {
                   -noConsole -title "vMix-Yamaha TF3 Bridge" `
                   -description "System Tray Launcher" -version "1.0.0" `
                   -company "vMix-Yamaha Bridge" -copyright "Open Source" `
+                  -iconFile "..\frontend\public\program-image.ico" `
                   -ErrorAction Stop
                   
     Write-Host "Compiled successfully: launcher.exe" -ForegroundColor Green

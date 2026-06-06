@@ -63,6 +63,12 @@ function Start-Servers {
     # ── Backend (Python / uvicorn) ───────────────────────────
     $pythonExe = Join-Path $backendDir ".venv\Scripts\pythonw.exe"
     if (-not (Test-Path $pythonExe)) {
+        $pythonExe = Join-Path $backendDir ".venv\bin\pythonw.exe"
+    }
+    if (-not (Test-Path $pythonExe)) {
+        $pythonExe = Join-Path $backendDir ".venv\bin\python.exe"
+    }
+    if (-not (Test-Path $pythonExe)) {
         # Fallback: try system pythonw
         $pythonExe = "pythonw.exe"
     }

@@ -134,23 +134,29 @@ $backendDir = Join-Path $InstallDir "backend"
 try {
     Push-Location $backendDir
 
-    # Find python executable (might be in a new location after install)
-    $pythonCmd = "python"
+    # Try the py launcher first (standard CPython on Windows)
+    $pythonCmd = "py"
     if (-not (Get-Command $pythonCmd -ErrorAction SilentlyContinue)) {
-        # Try common install locations
+        # Fallback 1: Common install locations
         $commonPaths = @(
-            "C:\Program Files\Python312\python.exe",
             "C:\Program Files\Python313\python.exe",
+            "C:\Program Files\Python312\python.exe",
             "C:\Program Files\Python311\python.exe",
-            "$env:LOCALAPPDATA\Programs\Python\Python312\python.exe",
-            "$env:LOCALAPPDATA\Programs\Python\Python313\python.exe"
+            "$env:LOCALAPPDATA\Programs\Python\Python313\python.exe",
+            "$env:LOCALAPPDATA\Programs\Python\Python312\python.exe"
         )
+        $found = $false
         foreach ($p in $commonPaths) {
             if (Test-Path $p) {
                 $pythonCmd = $p
-                Write-Log "  Found Python at: $p"
+                $found = $true
                 break
             }
+        }
+        
+        # Fallback 2: Whatever is on PATH
+        if (-not $found) {
+            $pythonCmd = "python"
         }
     }
 
@@ -159,6 +165,10 @@ try {
     Write-Log "  Venv created."
 
     $pipExe = Join-Path $backendDir ".venv\Scripts\pip.exe"
+    if (-not (Test-Path $pipExe)) {
+        $pipExe = Join-Path $backendDir ".venv\bin\pip.exe"
+    }
+    
     if (Test-Path $pipExe) {
         Write-Log "  Installing Python packages..."
         & $pipExe install --no-cache-dir -r requirements.txt 2>&1 | Out-Null

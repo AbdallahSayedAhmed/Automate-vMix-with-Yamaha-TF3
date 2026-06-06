@@ -33,7 +33,9 @@ PrivilegesRequired=admin
 WizardStyle=modern
 DisableWelcomePage=no
 ; ── Misc ──
+SetupIconFile=..\frontend\public\program-image.ico
 UninstallDisplayName={#MyAppName}
+UninstallDisplayIcon={app}\launcher.exe
 ArchitecturesAllowed=x64compatible
 
 [Languages]
