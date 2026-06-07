@@ -10,14 +10,24 @@ context manager handles startup/shutdown of:
 """
 
 from contextlib import asynccontextmanager
-from fastapi import FastAPI
+from pathlib import Path
+
+from fastapi import FastAPI, HTTPException
+from fastapi.responses import FileResponse
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 
 from app.core.config import settings
 from app.db.database import engine as db_engine, Base
 from app.api import triggers, websocket, vmix_inputs, settings as settings_api
-from app.drivers import vmix_tcp, yamaha_tcp
 import asyncio
+
+from app.drivers import vmix_tcp, yamaha_tcp
+
+
+APP_ROOT = Path(__file__).resolve().parents[2]
+FRONTEND_DIST = APP_ROOT / "frontend" / "dist"
+FRONTEND_INDEX = FRONTEND_DIST / "index.html"
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -78,6 +88,8 @@ def create_app() -> FastAPI:
             "status": "ok",
             "service": settings.app_name,
             "version": "0.1.0",
+            "install_root": str(APP_ROOT),
+            "frontend_ready": FRONTEND_INDEX.is_file(),
         }
 
     # Register API routers
@@ -87,6 +99,43 @@ def create_app() -> FastAPI:
     
     # Register WebSocket router
     app.include_router(websocket.router)
+
+    if FRONTEND_INDEX.is_file():
+        assets_dir = FRONTEND_DIST / "assets"
+        if assets_dir.exists():
+            app.mount("/assets", StaticFiles(directory=assets_dir), name="assets")
+
+        @app.get("/", include_in_schema=False)
+        async def serve_frontend_index():
+            return FileResponse(FRONTEND_DIST / "index.html")
+
+        @app.get("/{path:path}", include_in_schema=False)
+        async def serve_frontend_asset_or_index(path: str):
+            target = FRONTEND_DIST / path
+            if target.is_file():
+                return FileResponse(target)
+
+            if path.startswith(("api/", "ws/")):
+                raise HTTPException(status_code=404)
+
+            return FileResponse(FRONTEND_DIST / "index.html")
+    else:
+        @app.get("/", include_in_schema=False)
+        async def frontend_not_available():
+            raise HTTPException(
+                status_code=503,
+                detail=f"Frontend production build is missing: {FRONTEND_INDEX}",
+            )
+
+        @app.get("/{path:path}", include_in_schema=False)
+        async def frontend_asset_not_available(path: str):
+            if path.startswith(("api/", "ws/")):
+                raise HTTPException(status_code=404)
+
+            raise HTTPException(
+                status_code=503,
+                detail=f"Frontend production build is missing: {FRONTEND_INDEX}",
+            )
 
     return app
 

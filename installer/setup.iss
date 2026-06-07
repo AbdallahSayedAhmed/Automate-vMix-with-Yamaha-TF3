@@ -1,12 +1,11 @@
 ; ============================================================
-; vMix ↔ Yamaha TF3 Bridge — Inno Setup Installer Script
+; vMix-Yamaha TF3 Bridge - Inno Setup Installer Script
 ; ============================================================
-; Requirements: Inno Setup 6.2+ (https://jrsoftware.org/isinfo.php)
-;
-; Before compiling, ensure these files exist:
-;   installer/deps/node-setup.msi      (Node.js LTS x64 MSI)
-;   installer/deps/python-setup.exe    (Python 3.12+ amd64 installer)
-;   installer/launcher.exe             (compiled from launcher.ps1)
+; Requirements:
+;   - Inno Setup 6.2+
+;   - installer/deps/python-setup.exe
+;   - installer/launcher.exe compiled from launcher.ps1
+;   - frontend/dist built by installer/build-installer.ps1
 ; ============================================================
 
 #define MyAppName      "vMix-Yamaha TF3 Bridge"
@@ -22,21 +21,18 @@ AppPublisher={#MyAppPublisher}
 DefaultDirName={autopf}\vMix-Yamaha Bridge
 DefaultGroupName={#MyAppName}
 AllowNoIcons=yes
-; ── Output ──
 OutputDir=Output
 OutputBaseFilename=vMix-Yamaha-Bridge-Setup
 Compression=lzma2
 SolidCompression=yes
-; ── Privileges ──
 PrivilegesRequired=admin
-; ── UI ──
 WizardStyle=modern
 DisableWelcomePage=no
-; ── Misc ──
 SetupIconFile=..\frontend\public\program-image.ico
 UninstallDisplayName={#MyAppName}
 UninstallDisplayIcon={app}\launcher.exe
 ArchitecturesAllowed=x64compatible
+ArchitecturesInstallIn64BitMode=x64compatible
 
 [Languages]
 Name: "english"; MessagesFile: "compiler:Default.isl"
@@ -44,87 +40,51 @@ Name: "english"; MessagesFile: "compiler:Default.isl"
 [Tasks]
 Name: "desktopicon"; Description: "Create a &desktop shortcut"; GroupDescription: "Additional shortcuts:"
 
-; ============================================================
-; FILES
-; ============================================================
 [Files]
-; ── Backend (Python / FastAPI) ──
-Source: "..\backend\app\*";            DestDir: "{app}\backend\app";  Flags: ignoreversion recursesubdirs createallsubdirs; Excludes: "__pycache__,*.pyc"
-Source: "..\backend\requirements.txt"; DestDir: "{app}\backend";      Flags: ignoreversion
-Source: "..\backend\README.md";        DestDir: "{app}\backend";      Flags: ignoreversion
+; Backend (FastAPI)
+Source: "..\backend\app\*";             DestDir: "{app}\backend\app";  Flags: ignoreversion recursesubdirs createallsubdirs; Excludes: "__pycache__,*.pyc"
+Source: "..\backend\requirements.txt";  DestDir: "{app}\backend";      Flags: ignoreversion
+Source: "..\backend\README.md";         DestDir: "{app}\backend";      Flags: ignoreversion
 
-; ── Frontend (React / Vite) ──
-Source: "..\frontend\src\*";           DestDir: "{app}\frontend\src";    Flags: ignoreversion recursesubdirs createallsubdirs
-Source: "..\frontend\public\*";        DestDir: "{app}\frontend\public"; Flags: ignoreversion recursesubdirs createallsubdirs
-Source: "..\frontend\index.html";      DestDir: "{app}\frontend";       Flags: ignoreversion
-Source: "..\frontend\package.json";    DestDir: "{app}\frontend";       Flags: ignoreversion
-Source: "..\frontend\package-lock.json"; DestDir: "{app}\frontend";     Flags: ignoreversion
-Source: "..\frontend\vite.config.js";  DestDir: "{app}\frontend";       Flags: ignoreversion
-Source: "..\frontend\eslint.config.js"; DestDir: "{app}\frontend";      Flags: ignoreversion
+; Frontend production build
+Source: "..\frontend\dist\*";           DestDir: "{app}\frontend\dist"; Flags: ignoreversion recursesubdirs createallsubdirs
 
-; ── Launcher & scripts ──
-Source: "launcher.exe";      DestDir: "{app}"; Flags: ignoreversion
-Source: "post-install.ps1";  DestDir: "{app}"; Flags: ignoreversion
+; Launcher and install scripts
+Source: "launcher.exe";                 DestDir: "{app}";              Flags: ignoreversion
+Source: "post-install.ps1";             DestDir: "{app}";              Flags: ignoreversion
 
-; ── Project docs ──
-Source: "..\README.md"; DestDir: "{app}"; Flags: ignoreversion; Check: FileExists(ExpandConstant('..\README.md'))
+; Project docs
+Source: "..\README.md";                 DestDir: "{app}";              Flags: ignoreversion
 
-; ── Bundled dependency installers (only copied when not already installed) ──
-Source: "deps\node-setup.msi";    DestDir: "{tmp}"; Flags: ignoreversion deleteafterinstall; Check: not IsNodeInstalled
-Source: "deps\python-setup.exe";  DestDir: "{tmp}"; Flags: ignoreversion deleteafterinstall; Check: not IsPythonInstalled
+; Bundled Python installer, only copied when Python is missing
+Source: "deps\python-setup.exe";        DestDir: "{tmp}";              Flags: ignoreversion deleteafterinstall; Check: not IsPythonInstalled
 
-; ============================================================
-; SHORTCUTS
-; ============================================================
 [Icons]
-Name: "{autodesktop}\{#MyAppName}";                   Filename: "{app}\{#MyAppExeName}"; Tasks: desktopicon
-Name: "{group}\{#MyAppName}";                          Filename: "{app}\{#MyAppExeName}"
-Name: "{group}\{cm:UninstallProgram,{#MyAppName}}";    Filename: "{uninstallexe}"
+Name: "{autodesktop}\{#MyAppName}";                Filename: "{app}\{#MyAppExeName}"; Tasks: desktopicon
+Name: "{group}\{#MyAppName}";                      Filename: "{app}\{#MyAppExeName}"
+Name: "{group}\{cm:UninstallProgram,{#MyAppName}}"; Filename: "{uninstallexe}"
 
-; ============================================================
-; POST-INSTALL EXECUTION
-; ============================================================
 [Run]
-; Run the PowerShell post-install script (hidden, waits for completion)
 Filename: "powershell.exe"; \
-  Parameters: "-ExecutionPolicy Bypass -File ""{app}\post-install.ps1"" -InstallDir ""{app}"" -PCIP ""{code:GetPCIP}"" -YamahaIP ""{code:GetYamahaIP}"" -VMixIP ""{code:GetVMixIP}"" -NodeMsi ""{tmp}\node-setup.msi"" -PythonExe ""{tmp}\python-setup.exe"""; \
-  StatusMsg: "Configuring vMix-Yamaha Bridge (installing dependencies, this may take several minutes)..."; \
+  Parameters: "-ExecutionPolicy Bypass -File ""{app}\post-install.ps1"" -InstallDir ""{app}"" -PCIP ""{code:GetPCIP}"" -YamahaIP ""{code:GetYamahaIP}"" -VMixIP ""{code:GetVMixIP}"" -PythonExe ""{tmp}\python-setup.exe"""; \
+  StatusMsg: "Configuring vMix-Yamaha Bridge..."; \
   Flags: runhidden waituntilterminated
 
-; Optional: launch the app after install
 Filename: "{app}\{#MyAppExeName}"; \
-  Description: "Launch {#MyAppName} now"; \
-  Flags: postinstall nowait skipifsilent
+  StatusMsg: "Starting {#MyAppName}..."; \
+  Flags: nowait skipifsilent
 
-; ============================================================
-; UNINSTALL
-; ============================================================
 [UninstallDelete]
 Type: filesandordirs; Name: "{app}\backend\.venv"
-Type: filesandordirs; Name: "{app}\frontend\node_modules"
 Type: filesandordirs; Name: "{app}\backend\bridge.db"
 Type: filesandordirs; Name: "{app}\backend\.env"
 Type: files;          Name: "{app}\bridge.log"
 Type: files;          Name: "{app}\install.log"
 
-; ============================================================
-; PASCAL SCRIPT (custom wizard page + helper functions)
-; ============================================================
 [Code]
 var
   IPPage: TInputQueryWizardPage;
 
-// ── Detect Node.js ──────────────────────────────────────────
-function IsNodeInstalled: Boolean;
-var
-  ResultCode: Integer;
-begin
-  Result := Exec('cmd.exe', '/c node --version', '', SW_HIDE,
-                 ewWaitUntilTerminated, ResultCode)
-            and (ResultCode = 0);
-end;
-
-// ── Detect Python ───────────────────────────────────────────
 function IsPythonInstalled: Boolean;
 var
   ResultCode: Integer;
@@ -134,7 +94,6 @@ begin
             and (ResultCode = 0);
 end;
 
-// ── Custom wizard page for IP configuration ─────────────────
 procedure InitializeWizard;
 begin
   IPPage := CreateInputQueryPage(wpSelectDir,
@@ -149,13 +108,11 @@ begin
   IPPage.Add('Yamaha TF3 Mixer IP Address:', False);
   IPPage.Add('vMix Engine IP Address:', False);
 
-  // Defaults
   IPPage.Values[0] := '192.168.1.50';
   IPPage.Values[1] := '192.168.1.3';
   IPPage.Values[2] := '192.168.1.50';
 end;
 
-// ── Getter functions for {code:...} constants ───────────────
 function GetPCIP(Param: String): String;
 begin
   Result := IPPage.Values[0];
@@ -171,7 +128,6 @@ begin
   Result := IPPage.Values[2];
 end;
 
-// ── Validate IP page before proceeding ──────────────────────
 function NextButtonClick(CurPageID: Integer): Boolean;
 begin
   Result := True;
@@ -187,7 +143,6 @@ begin
   end;
 end;
 
-// ── Ready-to-install summary ────────────────────────────────
 function UpdateReadyMemo(Space, NewLine, MemoUserInfoInfo,
   MemoDirInfo, MemoTypeInfo, MemoComponentsInfo,
   MemoGroupInfo, MemoTasksInfo: String): String;
@@ -196,10 +151,8 @@ var
 begin
   S := '';
 
-  // Install directory
   S := S + MemoDirInfo + NewLine + NewLine;
 
-  // Network config
   S := S + 'Network Configuration:' + NewLine;
   S := S + Space + 'PC IP Address:      ' + IPPage.Values[0] + NewLine;
   S := S + Space + 'Yamaha TF3 IP:      ' + IPPage.Values[1] + NewLine;
@@ -208,13 +161,7 @@ begin
   S := S + Space + 'Default Gateway:    192.168.1.1' + NewLine;
   S := S + NewLine;
 
-  // Dependency status
   S := S + 'Dependencies:' + NewLine;
-  if IsNodeInstalled then
-    S := S + Space + 'Node.js:  Already installed (will skip)' + NewLine
-  else
-    S := S + Space + 'Node.js:  Will be installed' + NewLine;
-
   if IsPythonInstalled then
     S := S + Space + 'Python:   Already installed (will skip)' + NewLine
   else
@@ -222,7 +169,6 @@ begin
 
   S := S + NewLine;
 
-  // Tasks
   if MemoTasksInfo <> '' then
     S := S + MemoTasksInfo + NewLine;
 

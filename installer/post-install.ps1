@@ -1,33 +1,85 @@
 # ============================================================
-# vMix-Yamaha TF3 Bridge — Post-Install Configuration Script
+# vMix-Yamaha TF3 Bridge - Post-Install Configuration
 # ============================================================
 # Called by the Inno Setup installer after files are copied.
-# Handles: Node.js/Python install, venv, pip, npm, .env, network.
+# Handles Python setup, backend venv, .env configuration,
+# optional network configuration, and install folder permissions.
 # ============================================================
 
 param(
     [Parameter(Mandatory = $true)]
     [string]$InstallDir,
 
-    [string]$PCIP       = "192.168.1.50",
-    [string]$YamahaIP   = "192.168.1.3",
-    [string]$VMixIP     = "192.168.1.50",
-    [string]$NodeMsi    = "",
-    [string]$PythonExe  = ""
+    [string]$PCIP = "192.168.1.50",
+    [string]$YamahaIP = "192.168.1.3",
+    [string]$VMixIP = "192.168.1.50",
+    [string]$PythonExe = ""
 )
 
 $ErrorActionPreference = "Continue"
 $logFile = Join-Path $InstallDir "install.log"
 
-# ── Logging ──────────────────────────────────────────────────
 function Write-Log {
     param([string]$Message)
+
     $ts = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
-    "$ts | $Message" | Tee-Object -FilePath $logFile -Append
+    "$ts | $Message" | Out-File -FilePath $logFile -Append -Encoding utf8
+}
+
+function Refresh-Path {
+    $machinePath = [System.Environment]::GetEnvironmentVariable("PATH", "Machine")
+    $userPath = [System.Environment]::GetEnvironmentVariable("PATH", "User")
+    $env:PATH = "$machinePath;$userPath"
+}
+
+function Resolve-PythonCommand {
+    $py = Get-Command "py.exe" -ErrorAction SilentlyContinue
+    if ($py) {
+        return @{ File = $py.Source; PrefixArgs = @("-3") }
+    }
+
+    $python = Get-Command "python.exe" -ErrorAction SilentlyContinue
+    if ($python) {
+        return @{ File = $python.Source; PrefixArgs = @() }
+    }
+
+    $commonPaths = @(
+        "C:\Program Files\Python313\python.exe",
+        "C:\Program Files\Python312\python.exe",
+        "C:\Program Files\Python311\python.exe",
+        "$env:LOCALAPPDATA\Programs\Python\Python313\python.exe",
+        "$env:LOCALAPPDATA\Programs\Python\Python312\python.exe",
+        "$env:LOCALAPPDATA\Programs\Python\Python311\python.exe"
+    )
+
+    foreach ($path in $commonPaths) {
+        if (Test-Path $path) {
+            return @{ File = $path; PrefixArgs = @() }
+        }
+    }
+
+    return $null
+}
+
+function Invoke-Python {
+    param(
+        [hashtable]$PythonCommand,
+        [string[]]$Arguments
+    )
+
+    $allArgs = @()
+    if ($PythonCommand.PrefixArgs) {
+        $allArgs += $PythonCommand.PrefixArgs
+    }
+    $allArgs += $Arguments
+
+    & $PythonCommand.File @allArgs 2>&1 |
+        ForEach-Object { Write-Log "python: $_" }
+    return $LASTEXITCODE
 }
 
 Write-Log "============================================"
-Write-Log "  vMix-Yamaha TF3 Bridge — Post-Install"
+Write-Log "vMix-Yamaha TF3 Bridge - Post-Install"
 Write-Log "============================================"
 Write-Log "Install Dir : $InstallDir"
 Write-Log "PC IP       : $PCIP"
@@ -35,232 +87,135 @@ Write-Log "Yamaha IP   : $YamahaIP"
 Write-Log "vMix IP     : $VMixIP"
 Write-Log ""
 
-# ─────────────────────────────────────────────────────────────
-# 1. CHECK / INSTALL NODE.JS
-# ─────────────────────────────────────────────────────────────
-Write-Log "[1/7] Checking Node.js..."
-$nodeOk = $false
-try {
-    $ver = & cmd /c "node --version" 2>&1
-    if ($LASTEXITCODE -eq 0) {
-        Write-Log "  Node.js found: $ver"
-        $nodeOk = $true
-    }
-} catch {}
+Write-Log "[1/6] Checking Python..."
+$pythonCommand = Resolve-PythonCommand
 
-if (-not $nodeOk) {
-    Write-Log "  Node.js NOT found. Installing..."
-    if ($NodeMsi -and (Test-Path $NodeMsi)) {
-        $proc = Start-Process "msiexec.exe" `
-            -ArgumentList "/i `"$NodeMsi`" /qn /norestart" `
-            -Wait -PassThru -WindowStyle Hidden
-        Write-Log "  Node.js MSI exited with code: $($proc.ExitCode)"
-    } else {
-        Write-Log "  WARNING: Node.js MSI not found at: $NodeMsi"
-        Write-Log "  Please install Node.js manually from https://nodejs.org"
-    }
-}
-
-# ─────────────────────────────────────────────────────────────
-# 2. CHECK / INSTALL PYTHON
-# ─────────────────────────────────────────────────────────────
-Write-Log "[2/7] Checking Python..."
-$pythonOk = $false
-try {
-    $ver = & cmd /c "python --version" 2>&1
-    if ($LASTEXITCODE -eq 0) {
-        Write-Log "  Python found: $ver"
-        $pythonOk = $true
-    }
-} catch {}
-
-if (-not $pythonOk) {
-    Write-Log "  Python NOT found. Installing..."
+if (-not $pythonCommand) {
+    Write-Log "Python not found. Installing bundled Python..."
     if ($PythonExe -and (Test-Path $PythonExe)) {
         $proc = Start-Process $PythonExe `
             -ArgumentList "/quiet InstallAllUsers=1 PrependPath=1 Include_pip=1 Include_launcher=1" `
             -Wait -PassThru -WindowStyle Hidden
-        Write-Log "  Python installer exited with code: $($proc.ExitCode)"
+        Write-Log "Python installer exited with code: $($proc.ExitCode)"
+        Refresh-Path
+        $pythonCommand = Resolve-PythonCommand
     } else {
-        Write-Log "  WARNING: Python installer not found at: $PythonExe"
-        Write-Log "  Please install Python manually from https://python.org"
+        Write-Log "ERROR: Python installer not found at: $PythonExe"
     }
 }
 
-# ─────────────────────────────────────────────────────────────
-# 3. REFRESH SYSTEM PATH
-# ─────────────────────────────────────────────────────────────
-Write-Log "[3/7] Refreshing system PATH..."
-$machinePath = [System.Environment]::GetEnvironmentVariable("PATH", "Machine")
-$userPath    = [System.Environment]::GetEnvironmentVariable("PATH", "User")
-$env:PATH    = "$machinePath;$userPath"
-Write-Log "  PATH refreshed."
+if ($pythonCommand) {
+    Write-Log "Python command: $($pythonCommand.File) $($pythonCommand.PrefixArgs -join ' ')"
+} else {
+    Write-Log "ERROR: Python is still unavailable. Backend setup cannot continue."
+}
 
-# ─────────────────────────────────────────────────────────────
-# 4. WRITE .env CONFIGURATION FILE
-# ─────────────────────────────────────────────────────────────
-Write-Log "[4/7] Writing .env configuration..."
+Write-Log "[2/6] Writing backend .env configuration..."
+$backendDir = Join-Path $InstallDir "backend"
+$envPath = Join-Path $backendDir ".env"
 $envContent = @"
-# =============================================================
-# vMix <-> Yamaha TF3 Bridge Configuration
+# vMix-Yamaha TF3 Bridge Configuration
 # Generated by installer on $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')
-# =============================================================
 
-# -- vMix Connection --
 VMIX_HOST=$VMixIP
 VMIX_TCP_PORT=8099
 VMIX_HTTP_PORT=8088
 
-# -- Yamaha TF3 Connection --
 YAMAHA_HOST=$YamahaIP
 YAMAHA_PORT=49280
 
-# -- Reconnect Strategy --
 RECONNECT_INITIAL_DELAY=1.0
 RECONNECT_MAX_DELAY=30.0
 RECONNECT_BACKOFF_FACTOR=2.0
 "@
 
-$envPath = Join-Path $InstallDir "backend\.env"
-[System.IO.File]::WriteAllText($envPath, $envContent, [System.Text.Encoding]::UTF8)
-Write-Log "  .env written to: $envPath"
-
-# ─────────────────────────────────────────────────────────────
-# 5. CREATE PYTHON VENV & INSTALL REQUIREMENTS
-# ─────────────────────────────────────────────────────────────
-Write-Log "[5/7] Setting up Python virtual environment..."
-$backendDir = Join-Path $InstallDir "backend"
-
 try {
-    Push-Location $backendDir
-
-    # Try the py launcher first (standard CPython on Windows)
-    $pythonCmd = "py"
-    if (-not (Get-Command $pythonCmd -ErrorAction SilentlyContinue)) {
-        # Fallback 1: Common install locations
-        $commonPaths = @(
-            "C:\Program Files\Python313\python.exe",
-            "C:\Program Files\Python312\python.exe",
-            "C:\Program Files\Python311\python.exe",
-            "$env:LOCALAPPDATA\Programs\Python\Python313\python.exe",
-            "$env:LOCALAPPDATA\Programs\Python\Python312\python.exe"
-        )
-        $found = $false
-        foreach ($p in $commonPaths) {
-            if (Test-Path $p) {
-                $pythonCmd = $p
-                $found = $true
-                break
-            }
-        }
-        
-        # Fallback 2: Whatever is on PATH
-        if (-not $found) {
-            $pythonCmd = "python"
-        }
-    }
-
-    Write-Log "  Creating venv with: $pythonCmd"
-    & $pythonCmd -m venv .venv 2>&1 | Out-Null
-    Write-Log "  Venv created."
-
-    $pipExe = Join-Path $backendDir ".venv\Scripts\pip.exe"
-    if (-not (Test-Path $pipExe)) {
-        $pipExe = Join-Path $backendDir ".venv\bin\pip.exe"
-    }
-    
-    if (Test-Path $pipExe) {
-        Write-Log "  Installing Python packages..."
-        & $pipExe install --no-cache-dir -r requirements.txt 2>&1 | Out-Null
-        Write-Log "  Python packages installed."
-    } else {
-        Write-Log "  ERROR: pip not found at $pipExe"
-    }
-
-    Pop-Location
+    [System.IO.Directory]::CreateDirectory($backendDir) | Out-Null
+    [System.IO.File]::WriteAllText($envPath, $envContent, [System.Text.Encoding]::UTF8)
+    Write-Log ".env written to: $envPath"
 } catch {
-    Write-Log "  ERROR creating Python venv: $_"
-    Pop-Location
+    Write-Log "ERROR writing .env: $_"
 }
 
-# ─────────────────────────────────────────────────────────────
-# 6. INSTALL FRONTEND DEPENDENCIES (npm install)
-# ─────────────────────────────────────────────────────────────
-Write-Log "[6/7] Installing frontend dependencies..."
-$frontendDir = Join-Path $InstallDir "frontend"
+Write-Log "[3/6] Setting up Python virtual environment..."
+if ($pythonCommand) {
+    try {
+        Push-Location $backendDir
 
-try {
-    Push-Location $frontendDir
-
-    # Find npm
-    $npmCmd = "npm"
-    if (-not (Get-Command $npmCmd -ErrorAction SilentlyContinue)) {
-        $npmPath = "C:\Program Files\nodejs\npm.cmd"
-        if (Test-Path $npmPath) {
-            $npmCmd = $npmPath
-            Write-Log "  Found npm at: $npmPath"
+        $venvExitCode = Invoke-Python -PythonCommand $pythonCommand -Arguments @("-m", "venv", ".venv")
+        if ($venvExitCode -ne 0) {
+            Write-Log "ERROR: venv creation failed with code $venvExitCode"
+        } else {
+            Write-Log "Virtual environment created."
         }
+
+        $venvPython = Join-Path $backendDir ".venv\Scripts\python.exe"
+        if (-not (Test-Path $venvPython)) {
+            $venvPython = Join-Path $backendDir ".venv\bin\python.exe"
+        }
+
+        if (Test-Path $venvPython) {
+            Write-Log "Installing backend packages..."
+            & $venvPython -m pip install --upgrade pip 2>&1 |
+                ForEach-Object { Write-Log "pip: $_" }
+            & $venvPython -m pip install --no-cache-dir -r requirements.txt 2>&1 |
+                ForEach-Object { Write-Log "pip: $_" }
+            Write-Log "Backend packages installed."
+        } else {
+            Write-Log "ERROR: venv Python not found at: $venvPython"
+        }
+
+        Pop-Location
+    } catch {
+        Write-Log "ERROR creating backend venv: $_"
+        Pop-Location
     }
-
-    Write-Log "  Running npm install (this may take a few minutes)..."
-    & cmd /c "`"$npmCmd`" install" 2>&1 | Out-Null
-    Write-Log "  Frontend dependencies installed."
-
-    Pop-Location
-} catch {
-    Write-Log "  ERROR installing frontend deps: $_"
-    Pop-Location
 }
 
-# ─────────────────────────────────────────────────────────────
-# 7. CONFIGURE ETHERNET ADAPTER — Static IP
-# ─────────────────────────────────────────────────────────────
-Write-Log "[7/7] Configuring Ethernet adapter..."
+Write-Log "[4/6] Configuring Ethernet adapter..."
 try {
-    # Find the physical Ethernet adapter (802.3 = wired Ethernet)
     $adapter = Get-NetAdapter -Physical -ErrorAction SilentlyContinue |
                Where-Object { $_.MediaType -eq "802.3" } |
                Select-Object -First 1
 
     if (-not $adapter) {
-        # Fallback: try by name pattern
         $adapter = Get-NetAdapter -ErrorAction SilentlyContinue |
                    Where-Object { $_.Name -like "Ethernet*" -or $_.Name -like "Local Area*" } |
                    Select-Object -First 1
     }
 
     if ($adapter) {
-        Write-Log "  Found adapter: $($adapter.Name) [$($adapter.InterfaceDescription)]"
-        $adapterName = $adapter.Name
-
-        # Set static IP
-        & netsh interface ip set address name="$adapterName" static $PCIP 255.255.255.0 192.168.1.1
-        Write-Log "  Static IP configured:"
-        Write-Log "    IP Address  : $PCIP"
-        Write-Log "    Subnet Mask : 255.255.255.0"
-        Write-Log "    Gateway     : 192.168.1.1"
+        Write-Log "Found adapter: $($adapter.Name) [$($adapter.InterfaceDescription)]"
+        & netsh interface ip set address name="$($adapter.Name)" static $PCIP 255.255.255.0 192.168.1.1 2>&1 |
+            ForEach-Object { Write-Log "netsh: $_" }
+        Write-Log "Static IP configured: $PCIP / 255.255.255.0 / 192.168.1.1"
     } else {
-        Write-Log "  WARNING: No Ethernet adapter found."
-        Write-Log "  Please configure your network adapter manually:"
-        Write-Log "    IP: $PCIP  |  Subnet: 255.255.255.0  |  Gateway: 192.168.1.1"
+        Write-Log "WARNING: No Ethernet adapter found."
+        Write-Log "Configure manually if needed: IP $PCIP, subnet 255.255.255.0, gateway 192.168.1.1"
     }
 } catch {
-    Write-Log "  ERROR configuring network: $_"
+    Write-Log "ERROR configuring network: $_"
 }
 
-# ─────────────────────────────────────────────────────────────
-# 8. GRANT USER PERMISSIONS ON INSTALL DIRECTORY
-# ─────────────────────────────────────────────────────────────
-Write-Log "Setting file permissions..."
+Write-Log "[5/6] Setting install folder permissions..."
 try {
     $currentUser = [System.Security.Principal.WindowsIdentity]::GetCurrent().Name
-    & icacls $InstallDir /grant "${currentUser}:(OI)(CI)F" /T /Q 2>&1 | Out-Null
-    Write-Log "  Full control granted to: $currentUser"
+    & icacls $InstallDir /grant "${currentUser}:(OI)(CI)F" /T /Q 2>&1 |
+        ForEach-Object { Write-Log "icacls: $_" }
+    Write-Log "Full control granted to: $currentUser"
 } catch {
-    Write-Log "  ERROR setting permissions: $_"
+    Write-Log "ERROR setting permissions: $_"
+}
+
+Write-Log "[6/6] Verifying packaged frontend..."
+$frontendIndex = Join-Path $InstallDir "frontend\dist\index.html"
+if (Test-Path $frontendIndex) {
+    Write-Log "Frontend build found: $frontendIndex"
+} else {
+    Write-Log "ERROR: Frontend build missing: $frontendIndex"
 }
 
 Write-Log ""
 Write-Log "============================================"
-Write-Log "  Post-install complete!"
+Write-Log "Post-install complete"
 Write-Log "============================================"
