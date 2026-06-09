@@ -85,6 +85,12 @@ export const DEFAULT_SHORTCUTS = {
     label: "Group selected rules",
     category: "Selection",
   },
+  deleteSelected: {
+    id: "deleteSelected",
+    keys: "delete",
+    label: "Delete selected rule(s)",
+    category: "Rules",
+  },
   selectByNumber: {
     id: "selectByNumber",
     keys: "ctrl+q",
@@ -219,7 +225,7 @@ export function useAppPreferences() {
     const merged = saved
       ? { ...DEFAULT_SHORTCUTS, ...saved }
       : { ...DEFAULT_SHORTCUTS };
-    delete merged.deleteSelected;
+
     if (merged.copyRule?.keys === "ctrl+shift+c")
       merged.copyRule = { ...merged.copyRule, keys: "ctrl+c" };
     if (merged.pasteRule?.keys === "ctrl+shift+v")

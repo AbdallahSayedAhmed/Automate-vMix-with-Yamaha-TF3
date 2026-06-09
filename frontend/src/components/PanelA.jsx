@@ -1144,10 +1144,35 @@ export const PanelA = React.memo(function PanelA({
         toast.success("Group updated");
       } else {
         const ids = [...selectedIds];
+        const orderBefore = snapshotOrderIds(triggers);
         await bulkGroup(ids, groupForm.name.trim(), groupForm.color);
+
+        // Reorder so the grouped rules become consecutive, keeping their relative order.
+        const sorted = [...triggers].sort(
+          (a, b) => a.sort_order - b.sort_order,
+        );
+        const selectedSet = new Set(ids);
+        const selectedSorted = sorted.filter((s) => selectedSet.has(s.id));
+        const remaining = sorted.filter((s) => !selectedSet.has(s.id));
+        const minIdx = Math.min(
+          ...sorted.map((s, i) => (selectedSet.has(s.id) ? i : sorted.length)),
+        );
+        const newOrderList = [
+          ...remaining.slice(0, minIdx),
+          ...selectedSorted,
+          ...remaining.slice(minIdx),
+        ];
+        const upd = newOrderList.map((r, i) => ({ id: r.id, sort_order: i }));
+        await reorderTriggers(upd);
+
         undoHistory.push({
           label: `Create group "${groupForm.name.trim()}"`,
-          undo: async () => bulkGroup(ids, "", ""),
+          undo: async () => {
+            await bulkGroup(ids, "", "");
+            await reorderTriggers(
+              orderBefore.map((id, i) => ({ id, sort_order: i })),
+            );
+          },
         });
         toast.success("Group created");
       }
@@ -1683,6 +1708,12 @@ export const PanelA = React.memo(function PanelA({
         !isInput
       )
         ctx.openGroupModal(null);
+      else if (
+        ctx.prefs.matchShortcut(e, "deleteSelected") &&
+        ctx.selectedIds.length &&
+        !isInput
+      )
+        ctx.handleBulkDelete();
       else if (
         ctx.prefs.matchShortcut(e, "editRule") &&
         ctx.selectedIds.length === 1 &&
