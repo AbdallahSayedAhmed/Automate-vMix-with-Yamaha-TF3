@@ -178,4 +178,3 @@ Pull requests welcome! Please open an issue first to discuss major changes.
 ## 📄 License
 
 © 2026 — Abdallah Mahmoud
-© 2026 — Abdallah Mahmoud
