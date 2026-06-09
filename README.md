@@ -22,12 +22,14 @@ Automates communication between vMix (video production software) and the Yamaha 
 1. Download `AutomateVmixYamahaTF3_Setup_v1.0.0.exe` from [Releases](../../releases)
 2. Double-click and follow the wizard
 3. A Desktop shortcut is created — double-click to launch
+4. A Desktop shortcut is created — double-click to launch
 
 ### Option 2 — Manual / Developer Setup
 
 **Requirements:**
 
 - [Node.js](https://nodejs.org/) v18 or higher
+- [python](https://www.python.org/downloads/) v13 or higher
 - [python](https://www.python.org/downloads/) v13 or higher
 - [Git](https://git-scm.com/) (optional)
 - vMix running on the same or local network machine
@@ -38,6 +40,47 @@ Automates communication between vMix (video production software) and the Yamaha 
 git clone https://github.com/YOUR_USERNAME/automate-vmix-yamaha-tf3.git
 cd automate-vmix-yamaha-tf3
 
+### 1. Backend (FastAPI)
+
+1.  Navigate to the `backend` directory:
+    ```bash
+    cd backend
+    ```
+2.  Create and activate a virtual environment:
+    ```bash
+    python -m venv .venv
+    # Windows:
+    .venv\Scripts\activate
+    # macOS/Linux:
+    source .venv/bin/activate
+    ```
+3.  Install dependencies:
+    ```bash
+    pip install -r requirements.txt
+    ```
+4.  Run the development server:
+    ```bash
+    uvicorn app.main:app --reload
+    ```
+    The API will be available at `http://127.0.0.1:8000`.
+
+### 2. Frontend (React/Vite)
+
+1.  Navigate to the `frontend` directory:
+    ```bash
+    cd frontend
+    ```
+2.  Install dependencies:
+    ```bash
+    npm install
+    ```
+3.  Start the development server:
+    ```bash
+    npm run dev
+    ```
+    The dashboard will be available at `http://localhost:5173`.
+
+```
 ### 1. Backend (FastAPI)
 
 1.  Navigate to the `backend` directory:
@@ -134,4 +177,5 @@ Pull requests welcome! Please open an issue first to discuss major changes.
 
 ## 📄 License
 
+© 2026 — Abdallah Mahmoud
 © 2026 — Abdallah Mahmoud
