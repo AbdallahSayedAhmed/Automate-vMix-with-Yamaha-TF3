@@ -59,12 +59,15 @@ async def reorder_triggers(items: list[ReorderItem], db: AsyncSession = Depends(
     await crud.bulk_reorder(db, items)
     return {"message": "Reordered successfully"}
 
-@router.post("/bulk-group", status_code=status.HTTP_200_OK)
+@router.post("/bulk-group", response_model=List[TriggerRuleResponse])
 async def bulk_group(req: BulkGroupRequest, db: AsyncSession = Depends(get_db)):
-    """Assign multiple triggers to a group."""
-    group_id = str(uuid.uuid4()) if req.group_name else None
-    await crud.bulk_group(db, req.ids, group_id, req.group_name if req.group_name else None, req.group_color if req.group_name else None)
-    return {"message": "Grouped successfully"}
+    """Assign multiple triggers to a group (or ungroup when group_name is empty)."""
+    if req.group_name:
+        group_id = req.group_id or str(uuid.uuid4())
+        updated = await crud.bulk_group(db, req.ids, group_id, req.group_name, req.group_color)
+    else:
+        updated = await crud.bulk_group(db, req.ids, None, None, None)
+    return updated
 
 @router.post("/bulk-delete", status_code=status.HTTP_200_OK)
 async def bulk_delete_triggers(req: BulkIdRequest, db: AsyncSession = Depends(get_db)):
@@ -72,11 +75,18 @@ async def bulk_delete_triggers(req: BulkIdRequest, db: AsyncSession = Depends(ge
     await crud.bulk_delete(db, req.ids)
     return {"message": "Deleted successfully"}
 
-@router.post("/bulk-toggle", status_code=status.HTTP_200_OK)
+@router.post("/bulk-toggle", response_model=List[TriggerRuleResponse])
 async def bulk_toggle_triggers(req: BulkToggleRequest, db: AsyncSession = Depends(get_db)):
     """Toggle multiple triggers."""
-    await crud.bulk_toggle(db, req.ids, req.is_active)
-    return {"message": "Toggled successfully"}
+    return await crud.bulk_toggle(db, req.ids, req.is_active)
+
+@router.post("/{trigger_id}/duplicate", response_model=TriggerRuleResponse, status_code=status.HTTP_201_CREATED)
+async def duplicate_trigger(trigger_id: int, db: AsyncSession = Depends(get_db)):
+    """Duplicate an existing trigger rule."""
+    duplicate = await crud.duplicate_trigger(db, trigger_id)
+    if not duplicate:
+        raise HTTPException(status_code=404, detail="Trigger rule not found")
+    return duplicate
 
 @router.post("/bulk-create", response_model=list[TriggerRuleResponse], status_code=status.HTTP_201_CREATED)
 async def bulk_create_triggers(req: BulkCreateRequest, db: AsyncSession = Depends(get_db)):

@@ -1,35 +1,48 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 
+const METER_FLUSH_MS = 120;
+const LOG_MAX = 100;
+
 export function useWebSocket() {
   const [vmixConnected, setVmixConnected] = useState(false);
   const [yamahaConnected, setYamahaConnected] = useState(false);
   const [logs, setLogs] = useState([]);
   const [meters, setMeters] = useState({});
   const [triggeredRules, setTriggeredRules] = useState({});
-  
+
   const ws = useRef(null);
   const reconnectTimer = useRef(null);
   const reconnectDelay = useRef(1000);
   const isMounted = useRef(true);
+  const metersPending = useRef({});
+  const metersFlushTimer = useRef(null);
+
+  const flushMeters = useCallback(() => {
+    metersFlushTimer.current = null;
+    const batch = metersPending.current;
+    if (!Object.keys(batch).length) return;
+    metersPending.current = {};
+    setMeters((prev) => ({ ...prev, ...batch }));
+  }, []);
+
+  const scheduleMeterFlush = useCallback(() => {
+    if (metersFlushTimer.current) return;
+    metersFlushTimer.current = setTimeout(flushMeters, METER_FLUSH_MS);
+  }, [flushMeters]);
 
   const connectWs = useCallback(() => {
-    // Clean up any existing connection
     if (ws.current) {
-      ws.current.onclose = null; // prevent triggering reconnect from manual close
+      ws.current.onclose = null;
       ws.current.close();
     }
 
-    // Determine WS protocol based on current location protocol
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    // Use window.location.host so it works through Vite proxy or direct connection
     const wsUrl = `${protocol}//${window.location.host}/ws/status`;
 
     const socket = new WebSocket(wsUrl);
     ws.current = socket;
 
     socket.onopen = () => {
-      console.log('WebSocket connected');
-      // Reset backoff on successful connection
       reconnectDelay.current = 1000;
     };
 
@@ -44,26 +57,24 @@ export function useWebSocket() {
             break;
 
           case 'NEW_LOG':
-            setLogs(prev => {
-              const newLogs = [msg.data, ...prev];
-              return newLogs.slice(0, 100);
-            });
+            setLogs((prev) => [msg.data, ...prev].slice(0, LOG_MAX));
             break;
 
           case 'LOG_HISTORY':
-            setLogs(msg.data.reverse().slice(0, 100));
+            setLogs(msg.data.reverse().slice(0, LOG_MAX));
             break;
-            
+
           case 'METER_UPDATE':
-            setMeters(prev => ({ ...prev, [msg.data.channel]: msg.data.level }));
+            metersPending.current[msg.data.channel] = msg.data.level;
+            scheduleMeterFlush();
             break;
-            
+
           case 'RULE_TRIGGERED':
-            setTriggeredRules(prev => ({ ...prev, [msg.data.rule_id]: Date.now() }));
+            setTriggeredRules((prev) => ({ ...prev, [msg.data.rule_id]: Date.now() }));
             break;
 
           default:
-            console.warn('Unknown WS message type:', msg.type);
+            break;
         }
       } catch (err) {
         console.error('Failed to parse WebSocket message', err);
@@ -75,19 +86,15 @@ export function useWebSocket() {
     };
 
     socket.onclose = () => {
-      console.log('WebSocket disconnected');
-      // Don't reset status here — keep last known state until we get a fresh STATUS_UPDATE
-      // Schedule reconnect with exponential backoff
       if (isMounted.current) {
         const delay = reconnectDelay.current;
-        console.log(`Reconnecting in ${delay}ms...`);
         reconnectTimer.current = setTimeout(() => {
           reconnectDelay.current = Math.min(delay * 2, 15000);
           connectWs();
         }, delay);
       }
     };
-  }, []);
+  }, [scheduleMeterFlush]);
 
   useEffect(() => {
     isMounted.current = true;
@@ -95,15 +102,14 @@ export function useWebSocket() {
 
     return () => {
       isMounted.current = false;
-      if (reconnectTimer.current) {
-        clearTimeout(reconnectTimer.current);
-      }
+      if (reconnectTimer.current) clearTimeout(reconnectTimer.current);
+      if (metersFlushTimer.current) clearTimeout(metersFlushTimer.current);
       if (ws.current) {
-        ws.current.onclose = null; // prevent reconnect on unmount
+        ws.current.onclose = null;
         ws.current.close();
       }
     };
   }, [connectWs]);
 
   return { vmixConnected, yamahaConnected, logs, meters, triggeredRules };
-}
+};

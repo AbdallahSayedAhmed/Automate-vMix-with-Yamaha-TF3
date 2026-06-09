@@ -2,6 +2,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 from sqlalchemy import delete
 from typing import List, Optional
+from datetime import datetime, timezone
 
 from app.db.models import TriggerRule
 from app.schemas.trigger import TriggerRuleCreate, TriggerRuleUpdate
@@ -72,15 +73,21 @@ async def bulk_reorder(db: AsyncSession, updates: list):
             db_trigger.sort_order = item.sort_order
     await db.commit()
 
-async def bulk_group(db: AsyncSession, ids: list[int], group_id: str, group_name: str, group_color: str):
-    """Assign multiple triggers to a group."""
+async def bulk_group(db: AsyncSession, ids: list[int], group_id: str | None, group_name: str | None, group_color: str | None):
+    """Assign multiple triggers to a group, or ungroup when group_name is empty."""
     result = await db.execute(select(TriggerRule).where(TriggerRule.id.in_(ids)))
-    triggers = result.scalars().all()
+    triggers = list(result.scalars().all())
     for t in triggers:
-        t.group_id = group_id
-        t.group_name = group_name
-        t.group_color = group_color
+        if not group_name:
+            t.group_id = None
+            t.group_name = None
+            t.group_color = None
+        else:
+            t.group_id = group_id
+            t.group_name = group_name
+            t.group_color = group_color
     await db.commit()
+    return triggers
 
 async def bulk_delete(db: AsyncSession, ids: list[int]):
     """Delete multiple triggers."""
@@ -90,10 +97,58 @@ async def bulk_delete(db: AsyncSession, ids: list[int]):
 async def bulk_toggle(db: AsyncSession, ids: list[int], is_active: bool):
     """Toggle active status for multiple triggers."""
     result = await db.execute(select(TriggerRule).where(TriggerRule.id.in_(ids)))
-    triggers = result.scalars().all()
+    triggers = list(result.scalars().all())
     for t in triggers:
         t.is_active = is_active
     await db.commit()
+    return triggers
+
+async def get_triggers_by_ids(db: AsyncSession, ids: list[int]) -> List[TriggerRule]:
+    if not ids:
+        return []
+    result = await db.execute(select(TriggerRule).where(TriggerRule.id.in_(ids)))
+    return list(result.scalars().all())
+
+async def record_rule_fire(db: AsyncSession, rule_id: int) -> None:
+    """Increment fire counter when a rule executes."""
+    trigger = await get_trigger(db, rule_id)
+    if not trigger:
+        return
+    trigger.fire_count = (trigger.fire_count or 0) + 1
+    trigger.last_fired_at = datetime.now(timezone.utc)
+    await db.commit()
+
+def _next_copy_name(existing_names: list[str], base_name: str) -> str:
+    import re
+    base = re.sub(r' \(\d+\)$', '', base_name.strip())
+    n = 1
+    while f"{base} ({n})" in existing_names:
+        n += 1
+    return f"{base} ({n})"
+
+
+async def duplicate_trigger(db: AsyncSession, trigger_id: int) -> Optional[TriggerRule]:
+    """Clone a rule with an incremented (n) name, placed at the end of the list."""
+    source = await get_trigger(db, trigger_id)
+    if not source:
+        return None
+    all_rules = await get_all_triggers(db)
+    max_order = max((r.sort_order for r in all_rules), default=0)
+    names = [r.name for r in all_rules]
+    data = {
+        c.name: getattr(source, c.name)
+        for c in TriggerRule.__table__.columns
+        if c.name not in ('id', 'created_at', 'updated_at', 'fire_count', 'last_fired_at', 'name', 'sort_order')
+    }
+    data['name'] = _next_copy_name(names, source.name)
+    data['sort_order'] = max_order + 1
+    data['fire_count'] = 0
+    data['last_fired_at'] = None
+    db_trigger = TriggerRule(**data)
+    db.add(db_trigger)
+    await db.commit()
+    await db.refresh(db_trigger)
+    return db_trigger
 
 async def bulk_create(db: AsyncSession, rules: list) -> List[TriggerRule]:
     """Create multiple triggers at once."""

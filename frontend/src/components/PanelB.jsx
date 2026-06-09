@@ -1,122 +1,326 @@
-import React, { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState, useMemo } from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
+import { ChevronLeft, ChevronRight, ChevronDown, ChevronUp, Terminal } from 'lucide-react';
 
-export function PanelB({ vmixConnected, yamahaConnected, logs }) {
+const FILTERS = ['ALL', 'YAMAHA', 'VMIX', 'WARN', 'ERR', 'INFO', 'SYS'];
+
+function getLogBadgeClass(log) {
+  const level = (log.level || '').toUpperCase();
+  const msg = (log.message || '').toLowerCase();
+
+  if (level === 'ERROR' || level === 'ERR') return 'log-badge--error';
+  if (level === 'WARNING' || level === 'WARN') return 'log-badge--warn';
+  if (level === 'SUCCESS') return 'log-badge--success';
+  if (msg.includes('yamaha') || msg.includes('osc')) return 'log-badge--midi';
+  if (msg.includes('vmix')) return 'log-badge--info';
+  if (level === 'INFO' && (msg.includes('sys') || msg.includes('bridge'))) return 'log-badge--sys';
+  if (level === 'INFO') return 'log-badge--info';
+  return 'log-badge--sys';
+}
+
+function getLogBadgeLabel(log) {
+  const level = (log.level || '').toUpperCase();
+  const msg = (log.message || '').toLowerCase();
+  if (level === 'WARNING') return 'WARN';
+  if (level === 'ERROR') return 'ERR';
+  if (level === 'SUCCESS') return 'OK';
+  if (msg.includes('yamaha') || msg.includes('osc')) return 'YAMAHA';
+  if (msg.includes('vmix')) return 'VMIX';
+  if (level) return level.slice(0, 4);
+  return 'SYS';
+}
+
+function getLogTextColor(log) {
+  const level = (log.level || '').toUpperCase();
+  const msg = log.message || '';
+
+  if (level === 'SUCCESS') return '#39E58C';
+  if (level === 'WARNING' || level === 'WARN') return '#F6B44B';
+  if (level === 'ERROR' || level === 'ERR') return '#FF5C7A';
+  if (msg.includes('Connection Established')) return '#39E58C';
+  if (msg.includes('Connection Lost')) return '#FF5C7A';
+  if (msg.includes('Matched rule')) return '#20D9FF';
+  return '#8B93A8';
+}
+
+function formatTime(log) {
+  if (log.timestamp) {
+    try {
+      return new Date(log.timestamp).toLocaleTimeString([], {
+        hour: '2-digit',
+        minute: '2-digit',
+        second: '2-digit',
+        hour12: false,
+      });
+    } catch { /* fall through */ }
+  }
+  return new Date().toLocaleTimeString([], { hour12: false });
+}
+
+function matchesFilter(log, filter) {
+  if (filter === 'ALL') return true;
+  const level = (log.level || '').toUpperCase();
+  const msg = (log.message || '').toLowerCase();
+
+  switch (filter) {
+    case 'YAMAHA': return msg.includes('yamaha') || msg.includes('osc') || msg.includes('tf3') || msg.includes('mixer');
+    case 'VMIX': return msg.includes('vmix');
+    case 'WARN': return level === 'WARNING' || level === 'WARN';
+    case 'ERR': return level === 'ERROR' || level === 'ERR';
+    case 'INFO': return level === 'INFO' || level === 'SUCCESS';
+    case 'SYS': return !msg.includes('yamaha') && !msg.includes('osc') && !msg.includes('vmix') && level !== 'WARNING' && level !== 'ERROR';
+    default: return true;
+  }
+}
+
+export function PanelB({ vmixConnected, yamahaConnected, logs, isOpen, onToggle }) {
   const logEndRef = useRef(null);
+  const scrollRef = useRef(null);
+  const [filter, setFilter] = useState('ALL');
+  const [terminalExpanded, setTerminalExpanded] = useState(true);
+  const [userScrolled, setUserScrolled] = useState(false);
+  const prevLogCount = useRef(logs.length);
 
-  // Auto-scroll to bottom of logs
+  const filteredLogs = useMemo(
+    () => logs.filter((l) => matchesFilter(l, filter)),
+    [logs, filter]
+  );
+
   useEffect(() => {
-    logEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [logs]);
+    const el = scrollRef.current;
+    if (!el) return;
+    const onScroll = () => {
+      const atBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 40;
+      setUserScrolled(!atBottom);
+    };
+    el.addEventListener('scroll', onScroll);
+    return () => el.removeEventListener('scroll', onScroll);
+  }, [terminalExpanded, isOpen]);
 
-  /**
-   * Determine color class from the structured log entry level.
-   * Falls back to secondary text if the level is unrecognized.
-   */
-  const getLogColorClass = (log) => {
-    const level = (log.level || '').toUpperCase();
-    const message = log.message || '';
-
-    if (level === 'SUCCESS') return 'text-accent-green';
-    if (level === 'WARNING') return 'text-accent-amber';
-    if (level === 'ERROR') return 'text-accent-red';
-    // INFO-level messages — highlight connection events
-    if (message.includes('Connection Established')) return 'text-accent-green';
-    if (message.includes('Connection Lost')) return 'text-accent-red';
-    if (message.includes('Matched rule')) return 'text-accent-cyan';
-    return 'text-text-secondary';
-  };
-
-  /**
-   * Format a log's ISO timestamp into a short local time string.
-   */
-  const formatTime = (log) => {
-    if (log.timestamp) {
-      try {
-        return new Date(log.timestamp).toLocaleTimeString();
-      } catch {
-        // fall through
-      }
+  useEffect(() => {
+    if (!userScrolled && logs.length > prevLogCount.current) {
+      logEndRef.current?.scrollIntoView({ behavior: 'smooth' });
     }
-    return new Date().toLocaleTimeString();
-  };
+    prevLogCount.current = logs.length;
+  }, [logs, userScrolled]);
+
+  const bridgeOnline = vmixConnected && yamahaConnected;
 
   return (
-    <div className="bg-surface-800 rounded-xl border border-border-subtle flex flex-col h-full shadow-lg overflow-hidden">
-      
-      {/* Status Header */}
-      <div className="p-6 border-b border-border-subtle bg-surface-700 flex justify-around items-center">
-        
-        {/* vMix Status Indicator */}
-        <div className="flex flex-col items-center gap-3">
-          <div className="text-text-muted text-xs uppercase tracking-wider font-semibold">vMix Engine</div>
-          <div className="flex items-center gap-3 bg-surface-900 px-6 py-3 rounded-lg border border-border-active">
-            <div className={`w-4 h-4 rounded-full ${vmixConnected ? 'bg-accent-green status-connected' : 'bg-accent-red status-disconnected'}`} />
-            <span className="font-mono font-bold text-lg text-text-primary">
-              {vmixConnected ? 'ONLINE' : 'OFFLINE'}
-            </span>
+    <AnimatePresence mode="wait">
+      {isOpen ? (
+        <motion.aside
+          key="log-panel"
+          className="relative shrink-0 flex flex-col min-h-0"
+          style={{ width: 380 }}
+          initial={{ width: 0, opacity: 0 }}
+          animate={{ width: 380, opacity: 1 }}
+          exit={{ width: 0, opacity: 0 }}
+          transition={{ type: 'spring', stiffness: 300, damping: 30 }}
+        >
+          {/* Left-center rail handle */}
+          <button
+            type="button"
+            className="rail-handle"
+            onClick={onToggle}
+            aria-label="Collapse log panel"
+          >
+            <ChevronRight size={16} />
+          </button>
+
+          <div className="glass-panel rounded-xl flex flex-col h-full overflow-hidden">
+            {/* System Telemetry */}
+            <div
+              className="px-4 py-3 shrink-0"
+              style={{ borderBottom: '1px solid rgba(255,255,255,0.06)' }}
+            >
+              <div className="flex items-center justify-between mb-3">
+                <span
+                  className="text-[10px] font-bold tracking-[0.15em] uppercase"
+                  style={{ color: '#5A6278' }}
+                >
+                  System Telemetry
+                </span>
+                <span className="flex items-center gap-1.5 text-[10px]" style={{ color: '#8B93A8' }}>
+                  <span
+                    className="w-1.5 h-1.5 rounded-full animate-pulse-dot"
+                    style={{ background: '#20D9FF' }}
+                  />
+                  Telemetry Running
+                </span>
+              </div>
+
+              <div className="grid grid-cols-2 gap-2">
+                {[
+                  { label: 'vMix Server', online: vmixConnected },
+                  { label: 'Yamaha TF3', online: yamahaConnected },
+                ].map(({ label, online }) => (
+                  <div
+                    key={label}
+                    className="rounded-lg px-3 py-2.5 flex items-center gap-2"
+                    style={{ background: 'rgba(0,0,0,0.25)', border: '1px solid rgba(255,255,255,0.04)' }}
+                  >
+                    <span
+                      className={`w-2 h-2 rounded-full shrink-0 ${online ? 'status-connected' : 'status-disconnected'}`}
+                      style={{ background: online ? '#39E58C' : '#FF5C7A' }}
+                    />
+                    <div className="min-w-0">
+                      <div className="text-[9px] uppercase tracking-wider font-semibold truncate" style={{ color: '#5A6278' }}>
+                        {label}
+                      </div>
+                      <div
+                        className={`text-xs font-bold font-mono ${online ? 'text-live' : ''}`}
+                        style={{ color: online ? undefined : '#FF5C7A' }}
+                      >
+                        {online ? 'ONLINE' : 'OFFLINE'}
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* Terminal header — collapsible toggle */}
+            <button
+              type="button"
+              className="w-full px-4 py-2.5 flex items-center justify-between shrink-0 transition-colors"
+              style={{
+                borderBottom: terminalExpanded ? '1px solid rgba(255,255,255,0.06)' : 'none',
+                background: 'rgba(0,0,0,0.15)',
+              }}
+              onClick={() => setTerminalExpanded((v) => !v)}
+            >
+              <div className="flex items-center gap-2">
+                <Terminal size={14} style={{ color: '#20D9FF' }} />
+                <span className="text-xs font-bold font-mono tracking-wide" style={{ color: '#20D9FF' }}>
+                  &gt;_ LIVE BRIDGE LOGGER
+                </span>
+              </div>
+              <div className="flex items-center gap-3">
+                <span className="flex items-center gap-1.5 text-[10px]" style={{ color: '#8B93A8' }}>
+                  <span
+                    className="w-1.5 h-1.5 rounded-full"
+                    style={{ background: bridgeOnline ? '#39E58C' : '#F6B44B' }}
+                  />
+                  {bridgeOnline ? 'Telemetry Online' : 'Partial Link'}
+                </span>
+                {terminalExpanded ? <ChevronUp size={14} style={{ color: '#5A6278' }} /> : <ChevronDown size={14} style={{ color: '#5A6278' }} />}
+              </div>
+            </button>
+
+            <AnimatePresence initial={false}>
+              {terminalExpanded && (
+                <motion.div
+                  className="flex flex-col flex-1 min-h-0"
+                  initial={{ height: 0, opacity: 0 }}
+                  animate={{ height: 'auto', opacity: 1 }}
+                  exit={{ height: 0, opacity: 0 }}
+                  transition={{ duration: 0.3, ease: 'easeInOut' }}
+                >
+                  {/* Filter tabs */}
+                  <div
+                    className="px-3 py-2 flex items-center justify-between gap-2 shrink-0 flex-wrap"
+                    style={{ borderBottom: '1px solid rgba(255,255,255,0.04)' }}
+                  >
+                    <div className="flex gap-0.5 flex-wrap">
+                      {FILTERS.map((f) => (
+                        <button
+                          key={f}
+                          type="button"
+                          className={`log-filter-tab ${filter === f ? 'log-filter-tab--active' : ''}`}
+                          onClick={() => setFilter(f)}
+                        >
+                          {f}
+                        </button>
+                      ))}
+                    </div>
+                    <span className="text-[10px] font-mono" style={{ color: '#5A6278' }}>
+                      {filteredLogs.length}
+                    </span>
+                  </div>
+
+                  {/* Log feed */}
+                  <div
+                    ref={scrollRef}
+                    className="flex-1 overflow-y-auto px-3 py-2 font-mono text-xs"
+                    style={{ background: '#050508' }}
+                  >
+                    {filteredLogs.length === 0 ? (
+                      <div className="italic mt-4" style={{ color: '#5A6278' }}>
+                        Waiting for events…
+                      </div>
+                    ) : (
+                      [...filteredLogs].reverse().map((log, index) => {
+                        const message = typeof log === 'string' ? log : (log.message || JSON.stringify(log));
+                        const badgeClass = getLogBadgeClass(log);
+                        const badgeLabel = getLogBadgeLabel(log);
+                        const textColor = getLogTextColor(log);
+
+                        return (
+                          <motion.div
+                            key={`${log.timestamp || index}-${index}`}
+                            className="py-1 leading-relaxed break-words"
+                            initial={{ opacity: 0, x: -4 }}
+                            animate={{ opacity: 1, x: 0 }}
+                            transition={{ duration: 0.2 }}
+                          >
+                            <span className="select-none mr-2" style={{ color: '#5A6278' }}>
+                              [{formatTime(log)}]
+                            </span>
+                            <span className={`log-badge ${badgeClass}`}>{badgeLabel}</span>
+                            <span style={{ color: textColor }}>{message}</span>
+                          </motion.div>
+                        );
+                      })
+                    )}
+                    <div ref={logEndRef} />
+                  </div>
+
+                  {/* Footer status */}
+                  <div
+                    className="px-4 py-2 flex items-center justify-between shrink-0 text-[10px]"
+                    style={{
+                      borderTop: '1px solid rgba(255,255,255,0.04)',
+                      background: 'rgba(0,0,0,0.2)',
+                    }}
+                  >
+                    <span className={`flex items-center gap-1.5 font-semibold ${bridgeOnline ? 'text-live' : ''}`} style={{ color: bridgeOnline ? undefined : '#8B93A8' }}>
+                      <span
+                        className="w-1.5 h-1.5 rounded-full animate-pulse-dot"
+                        style={{ background: bridgeOnline ? '#39E58C' : '#F6B44B' }}
+                      />
+                      {bridgeOnline ? 'Bridge Active' : 'Bridge Standby'}
+                    </span>
+                    <span style={{ color: '#5A6278' }}>
+                      {logs.length} events
+                    </span>
+                  </div>
+                </motion.div>
+              )}
+            </AnimatePresence>
           </div>
-        </div>
-
-        {/* Separator / Connector Line */}
-        <div className="h-1 flex-1 mx-8 bg-surface-900 rounded relative overflow-hidden hidden md:block">
-          {vmixConnected && yamahaConnected && (
-            <div className="absolute inset-0 bg-accent-cyan opacity-30 animate-pulse" />
-          )}
-        </div>
-
-        {/* Yamaha Status Indicator */}
-        <div className="flex flex-col items-center gap-3">
-          <div className="text-text-muted text-xs uppercase tracking-wider font-semibold">Yamaha TF3</div>
-          <div className="flex items-center gap-3 bg-surface-900 px-6 py-3 rounded-lg border border-border-active">
-            <div className={`w-4 h-4 rounded-full ${yamahaConnected ? 'bg-accent-green status-connected' : 'bg-accent-red status-disconnected'}`} />
-            <span className="font-mono font-bold text-lg text-text-primary">
-              {yamahaConnected ? 'ONLINE' : 'OFFLINE'}
-            </span>
-          </div>
-        </div>
-
-      </div>
-
-      {/* Terminal Event Log */}
-      <div className="flex-1 p-4 bg-[#050508] font-mono text-sm overflow-hidden flex flex-col relative">
-        <div className="text-text-muted text-xs uppercase tracking-widest mb-2 flex justify-between items-center">
-          <span>Live Execution Log</span>
-          <div className="flex items-center gap-2">
-             <span className="w-2 h-2 rounded-full bg-accent-cyan animate-pulse"></span>
-             <span>Streaming</span>
-          </div>
-        </div>
-        
-        <div className="flex-1 overflow-y-auto space-y-1 custom-scrollbar pr-2">
-          {logs.length === 0 ? (
-            <div className="text-text-muted opacity-50 italic mt-4">Waiting for events...</div>
-          ) : (
-            [...logs].reverse().map((log, index) => {
-              const colorClass = getLogColorClass(log);
-              const timeStr = formatTime(log);
-              const message = typeof log === 'string' ? log : (log.message || JSON.stringify(log));
-
-              return (
-                <div key={index} className={`break-words ${colorClass}`}>
-                  <span className="text-text-muted text-xs mr-3 select-none">
-                    [{timeStr}]
-                  </span>
-                  {log.level && (
-                    <span className="text-xs mr-2 opacity-70">[{log.level}]</span>
-                  )}
-                  {message}
-                </div>
-              );
-            })
-          )}
-          <div ref={logEndRef} />
-        </div>
-        
-        {/* CRT Scanline Overlay */}
-        <div className="absolute inset-0 pointer-events-none opacity-5" 
-             style={{ backgroundImage: 'linear-gradient(rgba(255, 255, 255, 0) 50%, rgba(0, 0, 0, 0.25) 50%), linear-gradient(90deg, rgba(255, 0, 0, 0.06), rgba(0, 255, 0, 0.02), rgba(0, 0, 255, 0.06))', backgroundSize: '100% 4px, 3px 100%' }}>
-        </div>
-      </div>
-    </div>
+        </motion.aside>
+      ) : (
+        <motion.button
+          key="log-collapsed"
+          type="button"
+          className="shrink-0 flex items-center justify-center rounded-l-xl"
+          style={{
+            width: 36,
+            background: 'linear-gradient(145deg, rgba(21,27,39,0.95), rgba(16,21,31,0.9))',
+            border: '1px solid rgba(255,255,255,0.06)',
+            borderRight: 'none',
+            color: '#5A6278',
+          }}
+          onClick={onToggle}
+          aria-label="Expand log panel"
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          whileHover={{ color: '#20D9FF', borderColor: 'rgba(32,217,255,0.2)' }}
+        >
+          <ChevronLeft size={16} />
+        </motion.button>
+      )}
+    </AnimatePresence>
   );
 }

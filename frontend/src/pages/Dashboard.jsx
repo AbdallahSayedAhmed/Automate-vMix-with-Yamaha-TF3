@@ -1,82 +1,179 @@
 import React, { useState } from 'react';
-import { Settings as SettingsIcon, Terminal } from 'lucide-react';
+import { motion } from 'framer-motion';
+import { Settings as SettingsIcon, Wifi, WifiOff, Activity } from 'lucide-react';
+import { BridgeLogo } from '../components/BridgeLogo';
 import { PanelA } from '../components/PanelA';
 import { PanelB } from '../components/PanelB';
 import { SettingsModal } from '../components/SettingsModal';
 import { useWebSocket } from '../hooks/useWebSocket';
 import { toast } from 'sonner';
-import { Wifi, WifiOff } from 'lucide-react';
+
+const LiveClock = React.memo(function LiveClock() {
+  const [time, setTime] = React.useState(() => new Date());
+
+  React.useEffect(() => {
+    const id = setInterval(() => setTime(new Date()), 1000);
+    return () => clearInterval(id);
+  }, []);
+
+  return (
+    <span className="font-mono text-sm tabular-nums" style={{ color: '#8B93A8' }}>
+      {time.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
+    </span>
+  );
+});
 
 export function Dashboard() {
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  const [logPanelOpen, setLogPanelOpen] = useState(true);
   const { vmixConnected, yamahaConnected, logs, meters, triggeredRules } = useWebSocket();
   const prevVmix = React.useRef(vmixConnected);
   const prevYamaha = React.useRef(yamahaConnected);
 
   React.useEffect(() => {
     if (prevVmix.current !== vmixConnected) {
-      if (vmixConnected) toast.success("vMix Connected!");
-      else toast.error("vMix Connection Lost! Auto-reconnecting...");
+      if (vmixConnected) toast.success('vMix Connected!');
+      else toast.error('vMix Connection Lost! Auto-reconnecting…');
       prevVmix.current = vmixConnected;
     }
     if (prevYamaha.current !== yamahaConnected) {
-      if (yamahaConnected) toast.success("Yamaha TF3 Connected!");
-      else toast.error("Yamaha TF3 Connection Lost! Auto-reconnecting...");
+      if (yamahaConnected) toast.success('Yamaha TF3 Connected!');
+      else toast.error('Yamaha TF3 Connection Lost! Auto-reconnecting…');
       prevYamaha.current = yamahaConnected;
     }
   }, [vmixConnected, yamahaConnected]);
 
-  return (
-    <div className="min-h-screen bg-surface-900 text-text-primary p-4 md:p-6 flex flex-col h-screen overflow-hidden">
+  const bridgeActive = vmixConnected || yamahaConnected;
 
-      {/* Header */}
-      <header className="flex justify-between items-center mb-6 shrink-0">
-        <div className="flex items-center gap-3">
-          <div className="bg-accent-cyan bg-opacity-10 p-2 rounded-lg border border-accent-cyan border-opacity-30">
-            <Terminal className="text-accent-cyan" size={24} />
+  return (
+    <div
+      className="h-screen flex flex-col overflow-hidden"
+      style={{ background: '#070A0F' }}
+    >
+      {/* ── Top Command Bar ── */}
+      <motion.header
+        className="shrink-0 glass-panel mx-3 mt-3 rounded-xl px-5 py-3 flex items-center justify-between gap-4"
+        initial={{ opacity: 0, y: -12 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.5, ease: 'easeOut' }}
+      >
+        {/* Identity */}
+        <div className="flex items-center gap-3 min-w-0">
+          <div
+            className="shrink-0 rounded-xl overflow-hidden"
+            style={{
+              boxShadow: '0 0 20px rgba(0,210,255,0.15), 0 2px 8px rgba(0,0,0,0.35)',
+            }}
+          >
+            <BridgeLogo size={36} />
           </div>
-          <div>
-            <h1 className="text-2xl font-bold bg-gradient-to-r from-accent-cyan to-accent-green bg-clip-text text-transparent tracking-tight">
-              vMix ↔ Yamaha TF3 Bridge
+          <div className="min-w-0">
+            <h1 className="text-sm font-bold tracking-tight truncate" style={{ color: '#D8DCE6' }}>
+              AV Bridge
             </h1>
-            <p className="text-text-muted text-xs uppercase tracking-widest mt-1">Live Automation Engine</p>
+            <p
+              className="text-[10px] uppercase tracking-[0.2em] font-semibold"
+              style={{ color: '#5A6278' }}
+            >
+              Automation Engine
+            </p>
           </div>
         </div>
 
-        <div className="flex gap-4">
-          <div className="flex gap-3">
-            <div className={`flex items-center gap-2 px-3 py-1.5 rounded-lg border ${vmixConnected ? 'bg-accent-cyan/10 border-accent-cyan/20 text-accent-cyan' : 'bg-red-500/10 border-red-500/20 text-red-400'}`}>
-              {vmixConnected ? <Wifi size={14} /> : <WifiOff size={14} />}
-              <span className="text-xs font-bold uppercase tracking-wider">vMix</span>
-            </div>
-            <div className={`flex items-center gap-2 px-3 py-1.5 rounded-lg border ${yamahaConnected ? 'bg-accent-green/10 border-accent-green/20 text-accent-green' : 'bg-red-500/10 border-red-500/20 text-red-400'}`}>
-              {yamahaConnected ? <Wifi size={14} /> : <WifiOff size={14} />}
-              <span className="text-xs font-bold uppercase tracking-wider">Yamaha TF3</span>
-            </div>
+        {/* Connection pills */}
+        <div className="flex items-center gap-2 flex-wrap justify-center">
+          <div className={vmixConnected ? 'conn-pill conn-pill--online' : 'conn-pill conn-pill--offline'}>
+            {vmixConnected ? <Wifi size={13} /> : <WifiOff size={13} />}
+            <span>vMix</span>
           </div>
-          <button
-            onClick={() => setIsSettingsOpen(true)}
-            className="flex items-center gap-2 bg-surface-800 border border-border-subtle hover:border-accent-cyan hover:text-accent-cyan px-4 py-2 rounded-lg transition-colors text-sm font-semibold"
+          <div
+            className={
+              yamahaConnected
+                ? 'conn-pill conn-pill--online-yamaha'
+                : 'conn-pill conn-pill--offline'
+            }
           >
-            <SettingsIcon size={16} />
-            <span>Config</span>
+            {yamahaConnected ? <Wifi size={13} /> : <WifiOff size={13} />}
+            <span>Yamaha TF3</span>
+          </div>
+        </div>
+
+        {/* Right controls */}
+        <div className="flex items-center gap-3 shrink-0">
+          <LiveClock />
+
+          <button
+            type="button"
+            onClick={() => setLogPanelOpen((v) => !v)}
+            className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all hover-lift ${
+              logPanelOpen
+                ? 'text-live-cyan'
+                : ''
+            }`}
+            style={{
+              background: logPanelOpen ? 'rgba(32,217,255,0.08)' : 'rgba(255,255,255,0.03)',
+              border: `1px solid ${logPanelOpen ? 'rgba(32,217,255,0.25)' : 'rgba(255,255,255,0.06)'}`,
+              color: logPanelOpen ? undefined : '#8B93A8',
+            }}
+          >
+            <Activity size={14} />
+            Live Monitor
+          </button>
+
+          {bridgeActive && (
+            <span
+              className="hidden sm:inline-flex items-center gap-1.5 text-xs font-semibold text-live px-2"
+            >
+              <span className="w-1.5 h-1.5 rounded-full bg-accent-green animate-pulse-dot" />
+              Bridge Active
+            </span>
+          )}
+
+          <button
+            type="button"
+            onClick={() => setIsSettingsOpen(true)}
+            className="flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all hover-lift"
+            style={{
+              background: 'rgba(255,255,255,0.03)',
+              border: '1px solid rgba(255,255,255,0.06)',
+              color: '#8B93A8',
+            }}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.borderColor = 'rgba(32,217,255,0.25)';
+              e.currentTarget.style.color = '#20D9FF';
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.borderColor = 'rgba(255,255,255,0.06)';
+              e.currentTarget.style.color = '#8B93A8';
+            }}
+          >
+            <SettingsIcon size={14} />
+            Settings
           </button>
         </div>
-      </header>
+      </motion.header>
 
-      {/* Main Grid */}
-      <main className="flex-1 grid grid-cols-1 lg:grid-cols-3 gap-6 min-h-0">
+      {/* ── Split Workspace ── */}
+      <main className="flex-1 flex gap-3 min-h-0 px-3 pb-3 pt-3">
+        <motion.section
+          className="flex-1 min-w-0 min-h-0 flex flex-col"
+          layout
+          transition={{ type: 'spring', stiffness: 300, damping: 30 }}
+        >
+          <PanelA
+            vmixConnected={vmixConnected}
+            meters={meters}
+            triggeredRules={triggeredRules}
+          />
+        </motion.section>
 
-        {/* Panel A: Configuration (Takes up 2/3 on large screens) */}
-        <section className="lg:col-span-2 min-h-0 h-full flex flex-col">
-          <PanelA vmixConnected={vmixConnected} meters={meters} triggeredRules={triggeredRules} />
-        </section>
-
-        {/* Panel B: Status & Logs (Takes up 1/3 on large screens) */}
-        <section className="lg:col-span-1 min-h-0 h-full flex flex-col">
-          <PanelB vmixConnected={vmixConnected} yamahaConnected={yamahaConnected} logs={logs} />
-        </section>
-
+        <PanelB
+          vmixConnected={vmixConnected}
+          yamahaConnected={yamahaConnected}
+          logs={logs}
+          isOpen={logPanelOpen}
+          onToggle={() => setLogPanelOpen((v) => !v)}
+        />
       </main>
 
       <SettingsModal isOpen={isSettingsOpen} onClose={() => setIsSettingsOpen(false)} />

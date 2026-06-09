@@ -59,6 +59,8 @@ class TriggerRuleUpdate(BaseModel):
 
 class TriggerRuleResponse(TriggerRuleBase):
     id: int
+    fire_count: int = 0
+    last_fired_at: Optional[datetime] = None
     created_at: datetime
     updated_at: datetime
 
@@ -72,8 +74,9 @@ class ReorderItem(BaseModel):
 
 class BulkGroupRequest(BaseModel):
     ids: list[int]
-    group_name: str
-    group_color: str
+    group_name: str = ""
+    group_color: str = "#20D9FF"
+    group_id: Optional[str] = None
 
 class BulkIdRequest(BaseModel):
     ids: list[int]

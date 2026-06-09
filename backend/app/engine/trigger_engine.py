@@ -371,7 +371,15 @@ class TriggerEngine:
         if rule['delay_ms'] > 0:
             await asyncio.sleep(rule['delay_ms'] / 1000.0)
         asyncio.create_task(self._broadcast_trigger(rule['id']))
+        asyncio.create_task(self._record_fire(rule['id']))
         await self._execute_action(rule, rule['parameter_value'])
+
+    async def _record_fire(self, rule_id: int):
+        try:
+            async with AsyncSessionLocal() as db:
+                await crud.record_rule_fire(db, rule_id)
+        except Exception as e:
+            logger.warning(f"Failed to record fire for rule {rule_id}: {e}")
 
     async def _execute_action(self, rule: Dict[str, Any], target_value: str):
         from app.drivers import yamaha_tcp

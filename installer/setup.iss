@@ -9,7 +9,7 @@
 ; ============================================================
 
 #define MyAppName      "vMix-Yamaha TF3 Bridge"
-#define MyAppVersion   "1.0.0"
+#define MyAppVersion   "1.0.1"
 #define MyAppPublisher "vMix-Yamaha Bridge"
 #define MyAppExeName   "launcher.exe"
 
@@ -52,6 +52,7 @@ Source: "..\frontend\dist\*";           DestDir: "{app}\frontend\dist"; Flags: i
 ; Launcher and install scripts
 Source: "launcher.exe";                 DestDir: "{app}";              Flags: ignoreversion
 Source: "post-install.ps1";             DestDir: "{app}";              Flags: ignoreversion
+Source: "..\frontend\public\program-image.ico"; DestDir: "{app}"; Flags: ignoreversion
 
 ; Project docs
 Source: "..\README.md";                 DestDir: "{app}";              Flags: ignoreversion
@@ -60,8 +61,8 @@ Source: "..\README.md";                 DestDir: "{app}";              Flags: ig
 Source: "deps\python-setup.exe";        DestDir: "{tmp}";              Flags: ignoreversion deleteafterinstall; Check: not IsPythonInstalled
 
 [Icons]
-Name: "{autodesktop}\{#MyAppName}";                Filename: "{app}\{#MyAppExeName}"; Tasks: desktopicon
-Name: "{group}\{#MyAppName}";                      Filename: "{app}\{#MyAppExeName}"
+Name: "{autodesktop}\{#MyAppName}";                Filename: "{app}\{#MyAppExeName}"; IconFilename: "{app}\program-image.ico"; Tasks: desktopicon
+Name: "{group}\{#MyAppName}";                      Filename: "{app}\{#MyAppExeName}"; IconFilename: "{app}\program-image.ico"
 Name: "{group}\{cm:UninstallProgram,{#MyAppName}}"; Filename: "{uninstallexe}"
 
 [Run]

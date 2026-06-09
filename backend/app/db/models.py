@@ -47,6 +47,10 @@ class TriggerRule(Base):
     # ── Engine Configuration ─────────────────────────────────────
     delay_ms = Column(Integer, nullable=False, default=0)
     is_active = Column(Boolean, nullable=False, default=True)
+
+    # ── Runtime stats (updated when rule fires) ───────────────────
+    fire_count = Column(Integer, nullable=False, default=0)
+    last_fired_at = Column(DateTime, nullable=True)
     
     # ── Audit ────────────────────────────────────────────────────
     created_at = Column(DateTime, default=utc_now, nullable=False)

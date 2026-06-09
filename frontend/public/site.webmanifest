@@ -1,0 +1,25 @@
+{
+  "name": "AV Bridge",
+  "short_name": "AV Bridge",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#060D18",
+  "description": "Live production automation",
+  "icons": [
+    {
+      "src": "/512-512.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    },
+    {
+      "src": "/222.png",
+      "sizes": "222x222",
+      "type": "image/png"
+    },
+    {
+      "src": "/32-32.png",
+      "sizes": "32x32",
+      "type": "image/png"
+    }
+  ]
+}

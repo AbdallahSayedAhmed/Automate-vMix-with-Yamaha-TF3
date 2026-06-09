@@ -26,6 +26,20 @@ from app.drivers import vmix_tcp, yamaha_tcp
 
 
 APP_ROOT = Path(__file__).resolve().parents[2]
+
+
+def _migrate_schema(connection):
+    """Add columns to existing SQLite DBs without a full migration tool."""
+    from sqlalchemy import text, inspect
+    inspector = inspect(connection)
+    if 'trigger_rules' not in inspector.get_table_names():
+        return
+    columns = {col['name'] for col in inspector.get_columns('trigger_rules')}
+    if 'fire_count' not in columns:
+        connection.execute(text('ALTER TABLE trigger_rules ADD COLUMN fire_count INTEGER NOT NULL DEFAULT 0'))
+    if 'last_fired_at' not in columns:
+        connection.execute(text('ALTER TABLE trigger_rules ADD COLUMN last_fired_at DATETIME'))
+
 FRONTEND_DIST = APP_ROOT / "frontend" / "dist"
 FRONTEND_INDEX = FRONTEND_DIST / "index.html"
 
@@ -40,6 +54,7 @@ async def lifespan(app: FastAPI):
     print("   Initializing database tables...")
     async with db_engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
+        await conn.run_sync(_migrate_schema)
         
     # Start network drivers in the background
     print(f"   Connecting to vMix TCP   -> {settings.vmix_host}:{settings.vmix_tcp_port}")
