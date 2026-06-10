@@ -2,6 +2,8 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 from typing import List
 
+from app.engine.trigger_engine import engine as trigger_engine
+
 from app.db.database import get_db
 from app.db import crud
 from app.schemas.trigger import (
@@ -15,7 +17,9 @@ router = APIRouter(prefix="/triggers", tags=["Triggers"])
 @router.post("/", response_model=TriggerRuleResponse, status_code=status.HTTP_201_CREATED)
 async def create_trigger(trigger: TriggerRuleCreate, db: AsyncSession = Depends(get_db)):
     """Create a new trigger rule."""
-    return await crud.create_trigger(db, trigger)
+    result = await crud.create_trigger(db, trigger)
+    trigger_engine.invalidate_cache()
+    return result
 
 @router.get("/", response_model=List[TriggerRuleResponse])
 async def list_triggers(db: AsyncSession = Depends(get_db)):
@@ -36,6 +40,7 @@ async def update_trigger(trigger_id: int, trigger_update: TriggerRuleUpdate, db:
     trigger = await crud.update_trigger(db, trigger_id, trigger_update)
     if not trigger:
         raise HTTPException(status_code=404, detail="Trigger rule not found")
+    trigger_engine.invalidate_cache()
     return trigger
 
 @router.delete("/{trigger_id}", status_code=status.HTTP_204_NO_CONTENT)
@@ -44,6 +49,7 @@ async def delete_trigger(trigger_id: int, db: AsyncSession = Depends(get_db)):
     success = await crud.delete_trigger(db, trigger_id)
     if not success:
         raise HTTPException(status_code=404, detail="Trigger rule not found")
+    trigger_engine.invalidate_cache()
 
 @router.patch("/{trigger_id}/toggle", response_model=TriggerRuleResponse)
 async def toggle_trigger_status(trigger_id: int, db: AsyncSession = Depends(get_db)):
@@ -51,12 +57,14 @@ async def toggle_trigger_status(trigger_id: int, db: AsyncSession = Depends(get_
     trigger = await crud.toggle_trigger_status(db, trigger_id)
     if not trigger:
         raise HTTPException(status_code=404, detail="Trigger rule not found")
+    trigger_engine.invalidate_cache()
     return trigger
 
 @router.post("/reorder", status_code=status.HTTP_200_OK)
 async def reorder_triggers(items: list[ReorderItem], db: AsyncSession = Depends(get_db)):
     """Reorder multiple trigger rules."""
     await crud.bulk_reorder(db, items)
+    trigger_engine.invalidate_cache()
     return {"message": "Reordered successfully"}
 
 @router.post("/bulk-group", response_model=List[TriggerRuleResponse])
@@ -67,18 +75,22 @@ async def bulk_group(req: BulkGroupRequest, db: AsyncSession = Depends(get_db)):
         updated = await crud.bulk_group(db, req.ids, group_id, req.group_name, req.group_color)
     else:
         updated = await crud.bulk_group(db, req.ids, None, None, None)
+    trigger_engine.invalidate_cache()
     return updated
 
 @router.post("/bulk-delete", status_code=status.HTTP_200_OK)
 async def bulk_delete_triggers(req: BulkIdRequest, db: AsyncSession = Depends(get_db)):
     """Delete multiple triggers."""
     await crud.bulk_delete(db, req.ids)
+    trigger_engine.invalidate_cache()
     return {"message": "Deleted successfully"}
 
 @router.post("/bulk-toggle", response_model=List[TriggerRuleResponse])
 async def bulk_toggle_triggers(req: BulkToggleRequest, db: AsyncSession = Depends(get_db)):
     """Toggle multiple triggers."""
-    return await crud.bulk_toggle(db, req.ids, req.is_active)
+    result = await crud.bulk_toggle(db, req.ids, req.is_active)
+    trigger_engine.invalidate_cache()
+    return result
 
 @router.post("/{trigger_id}/duplicate", response_model=TriggerRuleResponse, status_code=status.HTTP_201_CREATED)
 async def duplicate_trigger(trigger_id: int, db: AsyncSession = Depends(get_db)):
@@ -91,4 +103,6 @@ async def duplicate_trigger(trigger_id: int, db: AsyncSession = Depends(get_db))
 @router.post("/bulk-create", response_model=list[TriggerRuleResponse], status_code=status.HTTP_201_CREATED)
 async def bulk_create_triggers(req: BulkCreateRequest, db: AsyncSession = Depends(get_db)):
     """Create multiple triggers at once."""
-    return await crud.bulk_create(db, req.rules)
+    result = await crud.bulk_create(db, req.rules)
+    trigger_engine.invalidate_cache()
+    return result

@@ -67,6 +67,12 @@ async def lifespan(app: FastAPI):
     from app.engine.trigger_engine import engine as trigger_engine
     trigger_engine.start_xml_poller(settings.vmix_host, settings.vmix_http_port)
     
+    # Sync monitored Yamaha channels after a short delay (allow connection to establish)
+    async def _delayed_channel_sync():
+        await asyncio.sleep(5.0)
+        await trigger_engine._sync_monitored_channels()
+    asyncio.create_task(_delayed_channel_sync())
+    
     yield
     # ── SHUTDOWN ─────────────────────────────────────────────────
     print(f"🛑 {settings.app_name} shutting down...")

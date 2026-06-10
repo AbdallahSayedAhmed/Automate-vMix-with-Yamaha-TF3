@@ -1596,6 +1596,7 @@ export const PanelA = React.memo(function PanelA({
     setShortcutsOpen,
     searchInputRef,
     handleSelectAll,
+    handleBulkDelete,
     handleBulkDuplicate,
     handleFabCopy,
     handlePasteNew,
@@ -2806,8 +2807,11 @@ const RuleRow = React.memo(function RuleRow({
         opacity: trigger.is_active ? 1 : 0.55,
       };
 
-  const meterKey = trigger.yamaha_channel || trigger.vmix_input_number;
-  const meterVal = meters[meterKey] ?? meters[trigger.vmix_input_number];
+  const meterKey =
+    trigger.listen_source === "yamaha"
+      ? trigger.vmix_input_number
+      : trigger.yamaha_channel || trigger.vmix_input_number;
+  const meterVal = meters[meterKey];
 
   return (
     <tr

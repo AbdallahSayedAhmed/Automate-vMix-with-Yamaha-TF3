@@ -33,12 +33,15 @@ async def test_yamaha_rcp_client_formatting():
     # Send standard command
     await client.send_command("InCh/Fader/Level", 1, "-1000")
     queued_cmd = await client._command_queue.get()
-    assert queued_cmd == "set MIXER:Current/InCh/Fader/Level 1 0 -1000\n"
-    
-    # Send ssrecall_ex
+    assert queued_cmd == "set MIXER:Current/InCh/Fader/Level 0 0 -1000\n"
+
+    await client.send_command("Mix/Fader/Level", 1, "0", mix=5)
+    queued_cmd_mix = await client._command_queue.get()
+    assert queued_cmd_mix == "set MIXER:Current/Mix/Fader/Level 4 0 0\n"
+
     await client.send_command("ssrecall_ex", 0, "Scene2")
     queued_cmd2 = await client._command_queue.get()
-    assert queued_cmd2 == "ssrecall_ex Scene2 0 0 0 0 0\n"
+    assert queued_cmd2 == "ssrecall_ex scene_a Scene2\n"
 
 @pytest.mark.asyncio
 async def test_vmix_http_parsing():

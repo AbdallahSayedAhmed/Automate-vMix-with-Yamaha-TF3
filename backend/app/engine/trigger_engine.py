@@ -38,6 +38,8 @@ class TriggerEngine:
         
         # Collision Detection: { target_key: (timestamp, priority_sort_order) }
         self._fader_locks: Dict[str, tuple[float, int]] = {}
+        
+        self._meter_log_count = 0  # Limit verbose meter logging
 
     def start_xml_poller(self, host: str, port: int):
         if not self._poller_task:
@@ -226,10 +228,102 @@ class TriggerEngine:
             except ValueError:
                 pass
 
+    def _get_meter_state(self, rule_id: int) -> Dict[str, Any]:
+        if rule_id not in self._ducking_state:
+            self._ducking_state[rule_id] = {
+                "status": "idle",
+                "last_speech_time": 0.0,
+                "saved_value": None,
+                "lock": asyncio.Lock(),
+                "cycle_task": None,
+            }
+        return self._ducking_state[rule_id]
+
+    def _yamaha_read_command(self, yamaha_command: str) -> str:
+        """RCP path used to read the current value before ducking."""
+        if yamaha_command.endswith('/Smooth'):
+            return yamaha_command.replace('/Smooth', '/Level')
+        return yamaha_command
+
+    def _yamaha_level_command(self, yamaha_command: str) -> str:
+        """RCP path used for level fades (Smooth commands map to Level)."""
+        return self._yamaha_read_command(yamaha_command)
+
+    def _is_yamaha_level_command(self, yamaha_command: str) -> bool:
+        return yamaha_command.endswith('/Level') or yamaha_command.endswith('/Smooth')
+
+    def _smooth_duration_ms(self, rule: Dict[str, Any]) -> int:
+        parts = str(rule.get('parameter_value', '')).split(',')
+        if len(parts) >= 2:
+            try:
+                return int(parts[-1])
+            except ValueError:
+                pass
+        return 1000
+
+    async def _cancel_yamaha_fade(self, rule: Dict[str, Any]):
+        from app.drivers import yamaha_tcp
+        cmd = rule.get('yamaha_command', '')
+        if cmd.endswith('/Smooth') or cmd.endswith('/Level'):
+            base = self._yamaha_level_command(cmd) if cmd.endswith('/Smooth') else cmd
+            yamaha_tcp.cancel_fade(base, rule['yamaha_channel'], rule['yamaha_mix'])
+            await asyncio.sleep(0.02)
+
+    async def _capture_action_value_once(self, rule: Dict[str, Any]) -> Optional[Any]:
+        """Read the live value that will be restored after speech stops."""
+        from app.drivers import yamaha_tcp
+        from app.core.config import settings
+        import httpx
+        from lxml import etree
+
+        try:
+            if rule['action_target'] == 'yamaha':
+                cmd = self._yamaha_read_command(rule['yamaha_command'])
+                await self._cancel_yamaha_fade(rule)
+                return await yamaha_tcp.request_value(
+                    cmd, rule['yamaha_channel'], rule['yamaha_mix'], timeout=2.0
+                )
+            if rule['action_target'] == 'vmix':
+                url = f"http://{settings.vmix_host}:{settings.vmix_http_port}/api/"
+                async with httpx.AsyncClient() as client:
+                    resp = await client.get(url, timeout=2.0)
+                    if resp.status_code != 200:
+                        return None
+                    root = etree.fromstring(resp.content)
+                    func = rule.get('vmix_function') or ''
+                    if func == 'SetVolume' and rule.get('vmix_target_input'):
+                        elem = root.find(f".//input[@number='{rule['vmix_target_input']}']")
+                        return elem.get('volume') if elem is not None else None
+                    if func == 'SetMasterVolume':
+                        elem = root.find(".//audio/master")
+                        return elem.get('volume') if elem is not None else None
+                    if func.startswith('SetBus') and func.endswith('Volume'):
+                        bus_letter = func.replace('SetBus', '').replace('Volume', '')
+                        elem = root.find(f".//audio/bus{bus_letter}")
+                        return elem.get('volume') if elem is not None else None
+        except Exception as e:
+            logger.warning(f"Failed to capture current value for rule {rule.get('id')}: {e}")
+        return None
+
+    async def _capture_action_value(self, rule: Dict[str, Any]) -> Optional[Any]:
+        """Retry capture so Yamaha GET is reliable even when the socket is busy."""
+        for attempt in range(3):
+            value = await self._capture_action_value_once(rule)
+            if value is not None:
+                return value
+            await asyncio.sleep(0.08 * (attempt + 1))
+        return None
+
     async def handle_yamaha_meter(self, ch_index: int, level: int):
-        """Called constantly by Yamaha NOTIFY MIXER:Current/InCh/Meter/Level"""
+        """Called by Yamaha meter stream with (channel_1based, level in centidB)."""
+        self._meter_log_count += 1
+        if self._meter_log_count <= 10:
+            logger.info(f"[ENGINE] handle_yamaha_meter called: ch={ch_index}, level={level}")
+            if self._meter_log_count == 10:
+                logger.info("[ENGINE] Suppressing further meter debug logs (working correctly)")
+
         cache_key = f"yamaha_YamahaMeter_{ch_index}"
-        
+
         if cache_key in self.rules_cache and (time.time() - self.rules_cache[cache_key]['timestamp'] < self.cache_ttl):
             rules = self.rules_cache[cache_key]['rules']
         else:
@@ -246,81 +340,198 @@ class TriggerEngine:
 
         now = time.time()
         for rule in rules:
-            rid = rule['id']
-            if rid not in self._ducking_state:
-                self._ducking_state[rid] = {"status": "idle", "last_speech_time": 0.0, "saved_value": None}
-            
-            state = self._ducking_state[rid]
+            state = self._get_meter_state(rule['id'])
             threshold = rule.get('threshold') or -4000
             release_threshold = rule.get('release_threshold')
             if release_threshold is None:
-                release_threshold = threshold - 1000  # Default hysteresis: 10dB below attack
+                release_threshold = threshold - 1000
             silence_timeout = rule.get('silence_timeout_ms') or 3000
-            
-            # Broadcast meter update for UI
+
             asyncio.create_task(self._broadcast_meter(ch_index, level))
-            
+
             if level >= threshold:
-                # ATTACK
                 state['last_speech_time'] = now
-                if state['status'] == "idle":
-                    state['status'] = "active"
-                    asyncio.create_task(self._duck_and_save(rule, state))
+                if state['status'] == 'restoring':
+                    self._cancel_meter_cycle(state)
+                    state['status'] = 'active'
+                    asyncio.create_task(self._resume_duck_after_interrupt(rule, state))
+                elif state['status'] == 'idle':
+                    state['status'] = 'attacking'
+                    self._start_meter_cycle(rule, state, self._duck_and_save(rule, state))
             elif level >= release_threshold:
-                # HYSTERESIS ZONE (below attack, but above release)
-                # Still counts as speaking to prevent rapid fluttering
                 state['last_speech_time'] = now
-            else:
-                # RELEASE
-                if state['status'] == "active":
-                    if (now - state['last_speech_time']) * 1000.0 >= silence_timeout:
-                        state['status'] = "idle"
-                        asyncio.create_task(self._restore_value(rule, state))
+            elif state['status'] == 'active' and state.get('saved_value') is not None:
+                if (now - state['last_speech_time']) * 1000.0 >= silence_timeout:
+                    state['status'] = 'restoring'
+                    self._start_meter_cycle(rule, state, self._restore_value(rule, state))
+
+    def _start_meter_cycle(self, rule: Dict[str, Any], state: Dict[str, Any], coro):
+        self._cancel_meter_cycle(state)
+        state['cycle_task'] = asyncio.create_task(coro)
+
+    def _cancel_meter_cycle(self, state: Dict[str, Any]):
+        task = state.get('cycle_task')
+        if task and not task.done():
+            task.cancel()
+        state['cycle_task'] = None
 
     async def _broadcast_meter(self, ch_index: int, level: int):
         from app.api.websocket import ws_manager
         await ws_manager.broadcast_meter(ch_index, level)
 
-    async def _duck_and_save(self, rule: Dict[str, Any], state: Dict[str, Any]):
+    async def _resume_duck_after_interrupt(self, rule: Dict[str, Any], state: Dict[str, Any]):
+        """Speech resumed during restore — cancel restore fade and re-apply duck command."""
         from app.drivers import yamaha_tcp
-        import httpx
-        from lxml import etree
 
-        await self._add_log("INFO", f"Microphone passed threshold on Ch {rule['vmix_input_number']}, initiating ducking.", {"rule_id": rule['id']})
+        async with state['lock']:
+            if rule['action_target'] == 'yamaha' and rule['yamaha_command'].endswith('/Smooth'):
+                base_cmd = self._yamaha_level_command(rule['yamaha_command'])
+                yamaha_tcp.cancel_fade(base_cmd, rule['yamaha_channel'], rule['yamaha_mix'])
+            await self._apply_meter_action(rule, rule['parameter_value'], is_restore=False)
+            await self._add_log(
+                "INFO",
+                f"Speech resumed on Ch {rule['vmix_input_number']} — ducking re-applied.",
+                {"rule_id": rule['id']},
+            )
 
-        # 1. Fetch current value before ducking
+    async def _duck_and_save(self, rule: Dict[str, Any], state: Dict[str, Any]):
         try:
-            if rule['action_target'] == 'yamaha':
-                orig_val = await yamaha_tcp.request_value(rule['yamaha_command'], rule['yamaha_channel'], rule['yamaha_mix'])
-                if orig_val is not None:
-                    state['saved_value'] = orig_val
-            elif rule['action_target'] == 'vmix':
-                async with httpx.AsyncClient() as client:
-                    resp = await client.get("http://127.0.0.1:8088/api/", timeout=2.0)
-                    if resp.status_code == 200:
-                        root = etree.fromstring(resp.content)
-                        if rule['vmix_function'] == 'SetVolume' and rule['vmix_target_input']:
-                            elem = root.find(f".//input[@number='{rule['vmix_target_input']}']")
-                            if elem is not None: state['saved_value'] = elem.get('volume')
-                        elif rule['vmix_function'] == 'SetMasterVolume':
-                            elem = root.find(".//audio/master")
-                            if elem is not None: state['saved_value'] = elem.get('volume')
-                        elif rule['vmix_function'] and rule['vmix_function'].startswith('SetBus'):
-                            bus_letter = rule['vmix_function'].replace('SetBus', '').replace('Volume', '')
-                            elem = root.find(f".//audio/bus{bus_letter}")
-                            if elem is not None: state['saved_value'] = elem.get('volume')
-        except Exception as e:
-            logger.warning(f"Failed to save dynamic value before ducking: {e}")
+            async with state['lock']:
+                saved = await self._capture_action_value(rule)
+                if saved is None:
+                    state['status'] = 'idle'
+                    state['saved_value'] = None
+                    await self._add_log(
+                        "WARNING",
+                        f"Could not read current state — duck skipped for '{rule['name']}'.",
+                        {"rule_id": rule['id']},
+                    )
+                    return
 
-        # 2. Execute Ducking
-        await self._execute_action(rule, rule['parameter_value'])
+                state['saved_value'] = saved
+                await self._apply_meter_action(
+                    rule, rule['parameter_value'], is_restore=False, saved_start=saved
+                )
+                state['status'] = 'active'
+                await self._add_log(
+                    "INFO",
+                    f"Mic active on Ch {rule['vmix_input_number']} — applied command (saved={saved}).",
+                    {"rule_id": rule['id']},
+                )
+        except asyncio.CancelledError:
+            if state['status'] == 'attacking':
+                state['status'] = 'idle'
+            raise
+        except Exception as e:
+            logger.error(f"Duck cycle failed for rule {rule['id']}: {e}")
+            state['status'] = 'idle'
+            state['saved_value'] = None
 
     async def _restore_value(self, rule: Dict[str, Any], state: Dict[str, Any]):
-        await self._add_log("INFO", f"Silence timeout reached on Ch {rule['vmix_input_number']}, restoring volume.", {"rule_id": rule['id']})
-        if state['saved_value'] is not None:
-            await self._execute_action(rule, str(state['saved_value']))
+        try:
+            async with state['lock']:
+                saved = state.get('saved_value')
+                if saved is None:
+                    state['status'] = 'idle'
+                    await self._add_log(
+                        "WARNING",
+                        f"No saved state to restore for rule '{rule['name']}'.",
+                        {"rule_id": rule['id']},
+                    )
+                    return
+
+                await self._apply_meter_action(rule, saved, is_restore=True)
+                state['saved_value'] = None
+                state['status'] = 'idle'
+                await self._add_log(
+                    "INFO",
+                    f"Silence on Ch {rule['vmix_input_number']} — restored to previous state ({saved}).",
+                    {"rule_id": rule['id']},
+                )
+        except asyncio.CancelledError:
+            raise
+        except Exception as e:
+            logger.error(f"Restore cycle failed for rule {rule['id']}: {e}")
+            state['status'] = 'active'
+
+    async def _apply_meter_action(
+        self,
+        rule: Dict[str, Any],
+        value: Any,
+        is_restore: bool = False,
+        saved_start: Optional[Any] = None,
+    ):
+        """Apply duck or restore for meter rules — all Yamaha + vMix volume/mute types."""
+        from app.drivers import yamaha_tcp
+
+        if rule['action_target'] == 'yamaha':
+            if not yamaha_tcp.connected:
+                await self._add_log(
+                    "WARNING",
+                    f"Yamaha not connected — skipped meter action for '{rule['name']}'",
+                    {"rule_id": rule['id']},
+                )
+                return
+
+            cmd = rule['yamaha_command']
+            ch, mix = rule['yamaha_channel'], rule['yamaha_mix']
+
+            if cmd.endswith('/Smooth') or (is_restore and self._is_yamaha_level_command(cmd)):
+                base_cmd = self._yamaha_level_command(cmd)
+                await self._cancel_yamaha_fade(rule)
+                duration = self._smooth_duration_ms(rule)
+
+                if is_restore:
+                    end_val = int(value)
+                    current_val = await yamaha_tcp.request_value(base_cmd, ch, mix, timeout=2.0)
+                    if current_val is None:
+                        current_val = end_val
+                    await yamaha_tcp.fade_command(base_cmd, ch, mix, current_val, end_val, duration)
+                    await yamaha_tcp.await_fade(base_cmd, ch, mix)
+                    await self._add_log(
+                        "SUCCESS",
+                        f"Restored smooth: {base_cmd} → {end_val} over {duration}ms",
+                        {"rule_id": rule['id']},
+                    )
+                    return
+
+                parts = str(value).split(',')
+                if len(parts) == 3:
+                    start_val, end_val, dur = int(parts[0]), int(parts[1]), int(parts[2])
+                elif len(parts) == 2:
+                    end_val, dur = int(parts[0]), int(parts[1])
+                    start_val = int(saved_start) if saved_start is not None else await yamaha_tcp.request_value(
+                        base_cmd, ch, mix, timeout=2.0
+                    )
+                    if start_val is None:
+                        start_val = 0
+                else:
+                    await yamaha_tcp.send_command(base_cmd, ch, str(value), mix)
+                    await self._add_log("SUCCESS", f"Meter duck: {cmd} val={value}", {"rule_id": rule['id']})
+                    return
+
+                await yamaha_tcp.fade_command(base_cmd, ch, mix, start_val, end_val, dur)
+                await self._add_log(
+                    "SUCCESS",
+                    f"Meter duck fade: {base_cmd} {start_val} → {end_val} over {dur}ms",
+                    {"rule_id": rule['id']},
+                )
+                return
+
+            target = str(int(value)) if isinstance(value, (int, float)) else str(value)
+            await yamaha_tcp.send_command(cmd, ch, target, mix)
+            action = "Restored" if is_restore else "Applied"
+            await self._add_log(
+                "SUCCESS",
+                f"{action} Yamaha: {cmd} ch={ch} mix={mix} val={target}",
+                {"rule_id": rule['id']},
+            )
+            return
+
+        if is_restore:
+            await self._execute_action(rule, str(value), skip_collision_check=True)
         else:
-            await self._add_log("WARNING", "No saved value to restore to!", {"rule_id": rule['id']})
+            await self._execute_action(rule, rule['parameter_value'], skip_collision_check=True)
 
     async def _process_match(self, source: str, event_name: str, input_number: int):
         cache_key = f"{source}_{event_name}_{input_number}"
@@ -381,7 +592,7 @@ class TriggerEngine:
         except Exception as e:
             logger.warning(f"Failed to record fire for rule {rule_id}: {e}")
 
-    async def _execute_action(self, rule: Dict[str, Any], target_value: str):
+    async def _execute_action(self, rule: Dict[str, Any], target_value: str, skip_collision_check: bool = False):
         from app.drivers import yamaha_tcp
         import httpx
 
@@ -389,7 +600,7 @@ class TriggerEngine:
         now = time.time()
         
         # Check collision: if this target was modified within 0.5s by a HIGHER priority rule (lower sort_order), skip.
-        if target_key in self._fader_locks:
+        if not skip_collision_check and target_key in self._fader_locks:
             last_time, last_priority = self._fader_locks[target_key]
             if now - last_time < 0.5 and rule['sort_order'] > last_priority:
                 await self._add_log("WARNING", f"Collision prevented: Rule '{rule['name']}' blocked by higher priority rule.", {"rule_id": rule['id']})
@@ -425,7 +636,11 @@ class TriggerEngine:
                 base_cmd = cmd.replace('/Smooth', '/Level')
                 try:
                     parts = target_value.split(',')
-                    if len(parts) == 2:
+                    if len(parts) == 1:
+                        await yamaha_tcp.send_command(base_cmd, rule['yamaha_channel'], parts[0], rule['yamaha_mix'])
+                        await self._add_log("SUCCESS", f"Sent to Yamaha: {base_cmd} ch={rule['yamaha_channel']} val={parts[0]} (Fallback to instant)", {"rule_id": rule['id']})
+                        return
+                    elif len(parts) == 2:
                         # Auto-detect start level from mixer
                         end_val = int(parts[0])
                         duration = int(parts[1])
@@ -461,6 +676,32 @@ class TriggerEngine:
                 await self._add_log("ERROR", f"Failed to send to vMix: {e}", {"rule_id": rule['id']})
 
     def invalidate_cache(self):
+        for state in self._ducking_state.values():
+            self._cancel_meter_cycle(state)
         self.rules_cache.clear()
+        self._ducking_state.clear()
+        logger.info("[ENGINE] Rules cache invalidated")
+        # Sync monitored channels with the Yamaha driver
+        asyncio.create_task(self._sync_monitored_channels())
+
+    async def _sync_monitored_channels(self):
+        """Query the DB for active Yamaha meter rules and tell the driver which channels to poll."""
+        try:
+            from app.drivers import yamaha_tcp
+            async with AsyncSessionLocal() as db:
+                result = await db.execute(select(TriggerRule).where(
+                    TriggerRule.is_active == True,
+                    TriggerRule.listen_source == 'yamaha',
+                    TriggerRule.trigger_event == 'YamahaMeter'
+                ))
+                rules = result.scalars().all()
+                channels = set()
+                for r in rules:
+                    if r.vmix_input_number:
+                        channels.add(r.vmix_input_number)
+                yamaha_tcp.set_monitored_channels(channels)
+                logger.info(f"[ENGINE] Synced monitored channels: {sorted(channels)}")
+        except Exception as e:
+            logger.error(f"[ENGINE] Failed to sync monitored channels: {e}")
 
 engine = TriggerEngine()

@@ -90,6 +90,8 @@ async def on_vmix_status_changed(is_connected: bool):
 
 async def on_yamaha_status_changed(is_connected: bool):
     await engine.handle_yamaha_status(is_connected)
+    if is_connected:
+        await engine._sync_monitored_channels()
     await ws_manager.broadcast_status(engine.vmix_connected, engine.yamaha_connected)
 
 # Register callbacks
