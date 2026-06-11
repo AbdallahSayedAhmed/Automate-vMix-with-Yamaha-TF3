@@ -1,5 +1,6 @@
 from datetime import datetime, timezone
-from sqlalchemy import Column, Integer, String, Boolean, DateTime
+from sqlalchemy import Column, Integer, String, Boolean, DateTime, ForeignKey
+from sqlalchemy.orm import relationship
 from app.db.database import Base
 
 def utc_now():
@@ -34,6 +35,8 @@ class TriggerRule(Base):
     release_threshold = Column(Integer, nullable=True) # Secondary threshold for hysteresis
     silence_timeout_ms = Column(Integer, nullable=True)
     time_threshold = Column(String, nullable=True) # e.g., '00:01:00'
+    is_multi_duck = Column(Boolean, nullable=False, default=False)
+    duck_members = Column(String, nullable=True)  # JSON array of per-mic duck configs
     
     # ── Target (Execute) ──────────────────────────────────
     action_target = Column(String, nullable=False, default='yamaha')
@@ -55,6 +58,66 @@ class TriggerRule(Base):
     # ── Audit ────────────────────────────────────────────────────
     created_at = Column(DateTime, default=utc_now, nullable=False)
     updated_at = Column(DateTime, default=utc_now, onupdate=utc_now, nullable=False)
+
+
+class DuckGroup(Base):
+    """Auto-duck group: multiple mic channels, per-target restore, shared silence."""
+    __tablename__ = "duck_groups"
+
+    id = Column(Integer, primary_key=True, index=True, autoincrement=True)
+    name = Column(String, nullable=False, default="Duck Group")
+    sort_order = Column(Integer, nullable=False, default=0)
+    is_active = Column(Boolean, nullable=False, default=True)
+    silence_timeout_ms = Column(Integer, nullable=False, default=3000)
+    created_at = Column(DateTime, default=utc_now, nullable=False)
+    updated_at = Column(DateTime, default=utc_now, onupdate=utc_now, nullable=False)
+
+    members = relationship(
+        "DuckGroupMember",
+        back_populates="group",
+        cascade="all, delete-orphan",
+        order_by="DuckGroupMember.sort_order",
+    )
+
+
+class DuckGroupMember(Base):
+    """One monitored Yamaha input channel within a duck group."""
+    __tablename__ = "duck_group_members"
+
+    id = Column(Integer, primary_key=True, index=True, autoincrement=True)
+    group_id = Column(Integer, ForeignKey("duck_groups.id", ondelete="CASCADE"), nullable=False, index=True)
+    monitor_channel = Column(Integer, nullable=False)
+    threshold = Column(Integer, nullable=False, default=-4000)
+    release_threshold = Column(Integer, nullable=False, default=-5000)
+    attack_ms = Column(Integer, nullable=False, default=700)
+    release_ms = Column(Integer, nullable=False, default=700)
+    sort_order = Column(Integer, nullable=False, default=0)
+
+    group = relationship("DuckGroup", back_populates="members")
+    actions = relationship(
+        "DuckGroupAction",
+        back_populates="member",
+        cascade="all, delete-orphan",
+        order_by="DuckGroupAction.sort_order",
+    )
+
+
+class DuckGroupAction(Base):
+    """Action executed when a member channel detects speech."""
+    __tablename__ = "duck_group_actions"
+
+    id = Column(Integer, primary_key=True, index=True, autoincrement=True)
+    member_id = Column(Integer, ForeignKey("duck_group_members.id", ondelete="CASCADE"), nullable=False, index=True)
+    action_target = Column(String, nullable=False, default="yamaha")
+    yamaha_command = Column(String, nullable=False, default="InCh/Fader/Smooth")
+    yamaha_channel = Column(Integer, nullable=False, default=1)
+    yamaha_mix = Column(Integer, nullable=False, default=0)
+    vmix_function = Column(String, nullable=True)
+    vmix_target_input = Column(Integer, nullable=True)
+    parameter_value = Column(String, nullable=False, default="-2500")
+    sort_order = Column(Integer, nullable=False, default=0)
+
+    member = relationship("DuckGroupMember", back_populates="actions")
 
 
 class ActivityLog(Base):

@@ -2,6 +2,9 @@ import asyncio
 import httpx
 import websockets
 import json
+import pytest
+
+pytestmark = pytest.mark.asyncio
 
 async def test_api_and_ws():
     print("Testing REST API...")

@@ -47,6 +47,13 @@ import {
   ruleMatchesFilter,
   RULE_FILTERS,
 } from "../constants/ruleConfig";
+import {
+  meterLevelToWidth,
+  meterLevelToColor,
+  formatMemberAction,
+  parseMultiFade,
+  formatMultiFade,
+} from "../constants/duckGroupConfig";
 import { ShortcutsPanel } from "./ShortcutsPanel";
 import { toast } from "sonner";
 import { api } from "../services/api";
@@ -99,6 +106,8 @@ function buildRestorePayload(rule) {
     release_threshold: rule.release_threshold ?? null,
     silence_timeout_ms: rule.silence_timeout_ms ?? null,
     time_threshold: rule.time_threshold ?? null,
+    is_multi_duck: rule.is_multi_duck ?? false,
+    duck_members: rule.duck_members ?? [],
     action_target: rule.action_target ?? "yamaha",
     yamaha_command: rule.yamaha_command,
     yamaha_channel: rule.yamaha_channel ?? 1,
@@ -108,6 +117,16 @@ function buildRestorePayload(rule) {
     parameter_value: rule.parameter_value ?? "0",
     delay_ms: rule.delay_ms ?? 0,
     is_active: rule.is_active !== false,
+  };
+}
+
+function normalizeMultiDuckPayload(payload) {
+  if (!(payload.listen_source === "yamaha" && payload.is_multi_duck)) return payload;
+  const fade = parseMultiFade(payload.parameter_value);
+  return {
+    ...payload,
+    parameter_value: formatMultiFade(fade.attack, fade.release),
+    duck_members: Array.isArray(payload.duck_members) ? payload.duck_members : [],
   };
 }
 
@@ -319,8 +338,11 @@ function SortableRuleWrapper({
   displayItems,
   meters,
   triggeredRules,
+  actionStates,
   vmixInputs,
   pasteMode,
+  expandedMultiDuckIds,
+  toggleMultiDuckExpand,
 }) {
   const {
     attributes,
@@ -359,7 +381,10 @@ function SortableRuleWrapper({
       isLast={idx === displayItems.length - 1}
       meters={meters}
       triggeredRules={triggeredRules}
+      actionStates={actionStates}
       vmixInputs={vmixInputs}
+      multiExpanded={expandedMultiDuckIds?.has(item.rule.id)}
+      onToggleMultiExpand={() => toggleMultiDuckExpand?.(item.rule.id)}
       style={style}
       setNodeRef={setNodeRef}
       attributes={attributes}
@@ -390,10 +415,13 @@ function SortableGroupWrapper({
   displayItems,
   meters,
   triggeredRules,
+  actionStates,
   collapsedGroups,
   toggleGroupCollapse,
   vmixInputs,
   pasteMode,
+  expandedMultiDuckIds,
+  toggleMultiDuckExpand,
 }) {
   const {
     attributes,
@@ -616,7 +644,10 @@ function SortableGroupWrapper({
             onMove={null}
             meters={meters}
             triggeredRules={triggeredRules}
+            actionStates={actionStates}
             vmixInputs={vmixInputs}
+            multiExpanded={expandedMultiDuckIds?.has(t.id)}
+            onToggleMultiExpand={() => toggleMultiDuckExpand?.(t.id)}
           />
         ))}
     </React.Fragment>
@@ -628,6 +659,7 @@ export const PanelA = React.memo(function PanelA({
   vmixConnected,
   meters = {},
   triggeredRules = {},
+  actionStates = {},
 }) {
   const {
     triggers,
@@ -645,6 +677,7 @@ export const PanelA = React.memo(function PanelA({
     bulkCreate,
   } = useTriggers();
   const [vmixInputs, setVmixInputs] = useState([]);
+  const [expandedMultiDuckIds, setExpandedMultiDuckIds] = useState(() => new Set());
   const [editorOpen, setEditorOpen] = useState(false);
   const [editingId, setEditingId] = useState(null);
   const [editForm, setEditForm] = useState({ ...DEFAULT_RULE_FORM });
@@ -775,9 +808,29 @@ export const PanelA = React.memo(function PanelA({
   // ── Handlers ─────────────────────────────────────────────────────────────
   const handleEditClick = (t) => {
     setEditingId(t.id);
-    setEditForm({ ...t });
+    const members = Array.isArray(t.duck_members)
+      ? t.duck_members
+      : typeof t.duck_members === "string"
+        ? (() => {
+            try {
+              return JSON.parse(t.duck_members);
+            } catch {
+              return [];
+            }
+          })()
+        : [];
+    setEditForm({ ...t, duck_members: members, is_multi_duck: !!t.is_multi_duck });
     setIsCreating(false);
     setEditorOpen(true);
+  };
+
+  const toggleMultiDuckExpand = (id) => {
+    setExpandedMultiDuckIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
   };
   const handleCreateNew = () => {
     setIsCreating(true);
@@ -790,7 +843,7 @@ export const PanelA = React.memo(function PanelA({
     ["id", "created_at", "updated_at", "fire_count", "last_fired_at"].forEach(
       (k) => delete p[k],
     );
-    return p;
+    return normalizeMultiDuckPayload(p);
   };
 
   const pushReorderUndo = (label, orderBefore) => {
@@ -1232,11 +1285,13 @@ export const PanelA = React.memo(function PanelA({
   };
 
   const handleCopy = (type, data) => {
+    const copied =
+      Array.isArray(data) ? data.map((item) => snapshotRule(item)) : snapshotRule(data);
     const anchor =
       type === "rule"
-        ? data
-        : lastRuleByOrder(Array.isArray(data) ? data : [data]);
-    setCopiedData({ type, data, fromId: anchor?.id ?? null });
+        ? copied
+        : lastRuleByOrder(Array.isArray(copied) ? copied : [copied]);
+    setCopiedData({ type, data: copied, fromId: anchor?.id ?? null });
     const label =
       type === "group"
         ? "Group"
@@ -1272,6 +1327,8 @@ export const PanelA = React.memo(function PanelA({
     "release_threshold",
     "silence_timeout_ms",
     "time_threshold",
+    "is_multi_duck",
+    "duck_members",
     "action_target",
     "yamaha_command",
     "yamaha_channel",
@@ -1290,7 +1347,7 @@ export const PanelA = React.memo(function PanelA({
     PASTE_FIELDS.forEach((f) => {
       patch[f] = src[f];
     });
-    await updateTrigger(tgtId, patch);
+    await updateTrigger(tgtId, normalizeMultiDuckPayload(patch));
     return { tgtId, restorePayload, name: tgt.name };
   };
 
@@ -1984,6 +2041,7 @@ export const PanelA = React.memo(function PanelA({
         copiedData={copiedData}
         saving={saving}
         showFieldHints={prefs.showFieldHints}
+        meters={meters}
         presets={prefs.presets}
         onSavePreset={(label, form) => {
           const id = prefs.saveCurrentAsPreset(label, form || editForm);
@@ -2613,12 +2671,15 @@ export const PanelA = React.memo(function PanelA({
                           displayItems={displayItems}
                           meters={meters}
                           triggeredRules={triggeredRules}
+                          actionStates={actionStates}
                           collapsedGroups={collapsedGroups}
                           toggleGroupCollapse={toggleGroupCollapse}
                           vmixInputs={vmixInputs}
                           pasteMode={pasteMode}
+                          expandedMultiDuckIds={expandedMultiDuckIds}
+                          toggleMultiDuckExpand={toggleMultiDuckExpand}
                         />
-                      );
+                    );
                     }
                     return (
                       <SortableRuleWrapper
@@ -2639,8 +2700,11 @@ export const PanelA = React.memo(function PanelA({
                         displayItems={displayItems}
                         meters={meters}
                         triggeredRules={triggeredRules}
+                        actionStates={actionStates}
                         vmixInputs={vmixInputs}
                         pasteMode={pasteMode}
+                        expandedMultiDuckIds={expandedMultiDuckIds}
+                        toggleMultiDuckExpand={toggleMultiDuckExpand}
                       />
                     );
                   })}
@@ -2753,6 +2817,29 @@ const CommandBadge = React.memo(({ rule }) => {
   );
 });
 
+function actionStateKey(ruleId, member, idx) {
+  return `${ruleId}:${idx ?? member.monitor_channel}`;
+}
+
+function actionStateStyle(status) {
+  switch (status) {
+    case "applying":
+      return { label: "Applying", color: "#20D9FF", bg: "rgba(32,217,255,0.1)" };
+    case "applied":
+      return { label: "Applied", color: "#39E58C", bg: "rgba(57,229,140,0.1)" };
+    case "restoring":
+      return { label: "Restoring", color: "#F6B44B", bg: "rgba(246,180,75,0.1)" };
+    case "restored":
+      return { label: "Restored", color: "#8B93A8", bg: "rgba(139,147,168,0.1)" };
+    case "held":
+      return { label: "Held", color: "#F6B44B", bg: "rgba(246,180,75,0.1)" };
+    case "error":
+      return { label: "Error", color: "#ff5c7a", bg: "rgba(255,92,122,0.1)" };
+    default:
+      return { label: "Ready", color: "#5A6278", bg: "rgba(90,98,120,0.08)" };
+  }
+}
+
 const RuleRow = React.memo(function RuleRow({
   trigger,
   ruleNum,
@@ -2772,8 +2859,11 @@ const RuleRow = React.memo(function RuleRow({
   isFirst,
   isLast,
   triggeredRules = {},
+  actionStates = {},
   meters = {},
   vmixInputs = [],
+  multiExpanded = false,
+  onToggleMultiExpand,
   style = {},
   setNodeRef,
   attributes,
@@ -2808,10 +2898,27 @@ const RuleRow = React.memo(function RuleRow({
       };
 
   const meterKey =
-    trigger.listen_source === "yamaha"
+    trigger.listen_source === "yamaha" && !trigger.is_multi_duck
       ? trigger.vmix_input_number
       : trigger.yamaha_channel || trigger.vmix_input_number;
   const meterVal = meters[meterKey];
+
+  const duckMembers = (() => {
+    if (!trigger.is_multi_duck) return [];
+    if (Array.isArray(trigger.duck_members)) return trigger.duck_members;
+    if (typeof trigger.duck_members === "string") {
+      try {
+        return JSON.parse(trigger.duck_members);
+      } catch {
+        return [];
+      }
+    }
+    return [];
+  })();
+  const getMemberActionState = (member, idx) =>
+    actionStates[actionStateKey(trigger.id, member, idx)] ||
+    actionStates[`${trigger.id}:${member.monitor_channel}`] ||
+    null;
 
   return (
     <tr
@@ -2885,6 +2992,38 @@ const RuleRow = React.memo(function RuleRow({
             >
               {trigger.name}
             </div>
+            {trigger.is_multi_duck && (
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onToggleMultiExpand?.();
+                }}
+                title="Expand mic channels"
+                style={{
+                  marginTop: "4px",
+                  display: "flex",
+                  alignItems: "center",
+                  gap: "4px",
+                  fontSize: "10px",
+                  color: "#39E58C",
+                  background: "rgba(57,229,140,0.08)",
+                  border: "1px solid rgba(57,229,140,0.2)",
+                  borderRadius: "6px",
+                  padding: "2px 6px",
+                  cursor: "pointer",
+                }}
+              >
+                <ChevronRight
+                  size={12}
+                  style={{
+                    transform: multiExpanded ? "rotate(90deg)" : "rotate(0deg)",
+                    transition: "transform 0.15s",
+                  }}
+                />
+                {duckMembers.length} mic{duckMembers.length === 1 ? "" : "s"}
+              </button>
+            )}
             <div
               style={{
                 fontSize: "10px",
@@ -2935,7 +3074,50 @@ const RuleRow = React.memo(function RuleRow({
         <div style={{ fontSize: "11px", color: "#8B93A8", marginTop: "2px" }}>
           {listen.secondary}
         </div>
-        {trigger.listen_source === "yamaha" && (
+        {trigger.is_multi_duck && multiExpanded && duckMembers.length > 0 && (
+          <div style={{ marginTop: "8px", display: "flex", flexDirection: "column", gap: "6px" }}>
+            {duckMembers.map((m, i) => {
+              const lvl = meters[m.monitor_channel];
+              return (
+                <div
+                  key={`${m.monitor_channel}-${i}`}
+                  style={{
+                    padding: "4px 6px",
+                    borderRadius: "6px",
+                    background: "rgba(0,0,0,0.2)",
+                    border: "1px solid rgba(255,255,255,0.05)",
+                  }}
+                >
+                  <div style={{ display: "flex", justifyContent: "space-between", fontSize: "10px", color: "#39E58C", fontWeight: 700 }}>
+                    <span>Mic Ch {m.monitor_channel}</span>
+                    <span style={{ color: "#6B7280", fontWeight: 500 }}>
+                      {lvl != null ? `${(lvl / 100).toFixed(1)} dB` : "No signal"}
+                    </span>
+                  </div>
+                  <div
+                    style={{
+                      height: "3px",
+                      background: "rgba(0,0,0,0.35)",
+                      borderRadius: "2px",
+                      overflow: "hidden",
+                      marginTop: "4px",
+                    }}
+                  >
+                    <div
+                      style={{
+                        height: "100%",
+                        width: `${meterLevelToWidth(lvl)}%`,
+                        background: meterLevelToColor(lvl, m.threshold),
+                        transition: "width 0.1s linear",
+                      }}
+                    />
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+        {trigger.listen_source === "yamaha" && !trigger.is_multi_duck && (
           <div
             style={{
               width: "100%",
@@ -2949,13 +3131,8 @@ const RuleRow = React.memo(function RuleRow({
             <div
               style={{
                 height: "100%",
-                width: `${Math.max(0, Math.min(100, (((meterVal ?? -6000) + 6000) / 7000) * 100))}%`,
-                background:
-                  (meterVal ?? -6000) > -1000
-                    ? "#FF5C7A"
-                    : (meterVal ?? -6000) > -2000
-                      ? "#F6B44B"
-                      : "#39E58C",
+                width: `${meterLevelToWidth(meterVal)}%`,
+                background: meterLevelToColor(meterVal, trigger.threshold ?? -4000),
                 transition: "width 0.1s linear",
               }}
             />
@@ -2988,6 +3165,86 @@ const RuleRow = React.memo(function RuleRow({
         <div style={{ fontSize: "11px", color: "#8B93A8", marginTop: "2px" }}>
           {command.secondary}
         </div>
+        {trigger.is_multi_duck && multiExpanded && duckMembers.length > 0 && (
+          <div style={{ marginTop: "8px", display: "flex", flexDirection: "column", gap: "6px" }}>
+            {duckMembers.map((m, i) => {
+              const state = getMemberActionState(m, i);
+              const status = actionStateStyle(state?.status);
+              const isVmix = m.action_target === "vmix";
+              return (
+                <div
+                  key={`cmd-${m.monitor_channel}-${i}`}
+                  style={{
+                    padding: "5px 6px",
+                    borderRadius: "6px",
+                    background: "rgba(0,0,0,0.2)",
+                    border: "1px solid rgba(255,255,255,0.05)",
+                    minWidth: 0,
+                  }}
+                >
+                  <div
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "space-between",
+                      gap: "8px",
+                      minWidth: 0,
+                    }}
+                  >
+                    <span
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        gap: "4px",
+                        minWidth: 0,
+                        color: isVmix ? "#20D9FF" : "#39E58C",
+                        fontSize: "10px",
+                        fontWeight: 800,
+                      }}
+                    >
+                      {isVmix ? <MonitorSpeaker size={10} /> : <Speaker size={10} />}
+                      <span style={{ whiteSpace: "nowrap" }}>Mic Ch {m.monitor_channel}</span>
+                    </span>
+                    <span
+                      style={{
+                        color: status.color,
+                        background: status.bg,
+                        border: `1px solid ${status.color}33`,
+                        borderRadius: "999px",
+                        padding: "1px 6px",
+                        fontSize: "9px",
+                        fontWeight: 900,
+                        textTransform: "uppercase",
+                        whiteSpace: "nowrap",
+                      }}
+                    >
+                      {status.label}
+                    </span>
+                  </div>
+                  <div
+                    title={formatMemberAction(m)}
+                    style={{
+                      marginTop: "3px",
+                      color: "#8B93A8",
+                      fontSize: "10px",
+                      lineHeight: 1.25,
+                      overflow: "hidden",
+                      textOverflow: "ellipsis",
+                      whiteSpace: "nowrap",
+                    }}
+                  >
+                    {formatMemberAction(m)}
+                  </div>
+                  {state?.restored_value != null && (
+                    <div style={{ marginTop: "2px", color: "#5A6278", fontSize: "9px", fontFamily: "monospace" }}>
+                      restored {String(state.restored_value)}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        )}
         {trigger.delay_ms > 0 && (
           <span
             style={{

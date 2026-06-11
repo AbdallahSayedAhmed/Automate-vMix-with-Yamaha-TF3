@@ -9,6 +9,7 @@ export function useWebSocket() {
   const [logs, setLogs] = useState([]);
   const [meters, setMeters] = useState({});
   const [triggeredRules, setTriggeredRules] = useState({});
+  const [actionStates, setActionStates] = useState({});
 
   const ws = useRef(null);
   const reconnectTimer = useRef(null);
@@ -73,6 +74,13 @@ export function useWebSocket() {
             setTriggeredRules((prev) => ({ ...prev, [msg.data.rule_id]: Date.now() }));
             break;
 
+          case 'ACTION_STATE_UPDATE': {
+            const data = { ...msg.data, updated_at: Date.now() };
+            const memberKey = `${data.rule_id}:${data.member_index ?? data.monitor_channel}`;
+            setActionStates((prev) => ({ ...prev, [memberKey]: data }));
+            break;
+          }
+
           default:
             break;
         }
@@ -111,5 +119,5 @@ export function useWebSocket() {
     };
   }, [connectWs]);
 
-  return { vmixConnected, yamahaConnected, logs, meters, triggeredRules };
+  return { vmixConnected, yamahaConnected, logs, meters, triggeredRules, actionStates };
 };

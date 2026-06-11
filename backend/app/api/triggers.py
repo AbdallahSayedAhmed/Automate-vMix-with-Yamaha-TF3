@@ -98,6 +98,7 @@ async def duplicate_trigger(trigger_id: int, db: AsyncSession = Depends(get_db))
     duplicate = await crud.duplicate_trigger(db, trigger_id)
     if not duplicate:
         raise HTTPException(status_code=404, detail="Trigger rule not found")
+    trigger_engine.invalidate_cache()
     return duplicate
 
 @router.post("/bulk-create", response_model=list[TriggerRuleResponse], status_code=status.HTTP_201_CREATED)

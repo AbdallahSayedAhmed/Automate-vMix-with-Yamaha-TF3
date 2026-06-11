@@ -39,6 +39,10 @@ def _migrate_schema(connection):
         connection.execute(text('ALTER TABLE trigger_rules ADD COLUMN fire_count INTEGER NOT NULL DEFAULT 0'))
     if 'last_fired_at' not in columns:
         connection.execute(text('ALTER TABLE trigger_rules ADD COLUMN last_fired_at DATETIME'))
+    if 'is_multi_duck' not in columns:
+        connection.execute(text('ALTER TABLE trigger_rules ADD COLUMN is_multi_duck BOOLEAN NOT NULL DEFAULT 0'))
+    if 'duck_members' not in columns:
+        connection.execute(text('ALTER TABLE trigger_rules ADD COLUMN duck_members TEXT'))
 
 FRONTEND_DIST = APP_ROOT / "frontend" / "dist"
 FRONTEND_INDEX = FRONTEND_DIST / "index.html"

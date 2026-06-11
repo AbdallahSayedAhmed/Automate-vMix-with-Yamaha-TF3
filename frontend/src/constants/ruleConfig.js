@@ -150,6 +150,8 @@ export const DEFAULT_RULE_FORM = {
   parameter_value: "0",
   delay_ms: 0,
   is_active: true,
+  is_multi_duck: false,
+  duck_members: [],
 };
 
 export const DEFAULT_PRESETS = [
@@ -257,6 +259,17 @@ export function formatListenDetail(rule, vmixInputs = []) {
     const thr = rule.threshold ?? -4000;
     const rel = rule.release_threshold ?? thr - 1000;
     const sil = rule.silence_timeout_ms ?? 3000;
+    if (rule.is_multi_duck) {
+      const members = Array.isArray(rule.duck_members) ? rule.duck_members : [];
+      const chs = members.map((m) => m.monitor_channel).filter(Boolean);
+      return {
+        badge: "MULTI DUCK",
+        badgeColor: "#39E58C",
+        primary: `${members.length || 0} mic channel${members.length === 1 ? "" : "s"}`,
+        secondary: chs.length ? `Ch ${chs.join(", ")} · Silence ${sil}ms` : `Silence ${sil}ms`,
+        tertiary: "Expand row to see each mic meter and action",
+      };
+    }
     return {
       badge: "YAMAHA METER",
       badgeColor: "#F6B44B",
@@ -285,6 +298,22 @@ export function formatListenDetail(rule, vmixInputs = []) {
 }
 
 export function formatCommandDetail(rule) {
+  if (rule.is_multi_duck && rule.listen_source === "yamaha") {
+    const members = Array.isArray(rule.duck_members) ? rule.duck_members : [];
+    const fadeParts = String(rule.parameter_value || "700,700").split(",");
+    const attackRaw = parseInt(fadeParts[0], 10);
+    const attack = Number.isFinite(attackRaw) && attackRaw >= 0 ? attackRaw : 700;
+    const releaseRaw = parseInt(fadeParts[1], 10);
+    const release =
+      Number.isFinite(releaseRaw) && releaseRaw >= 0 ? releaseRaw : attack;
+    return {
+      badge: "PER-MIC CMD",
+      badgeColor: "#39E58C",
+      primary: "Each mic → own command",
+      secondary: `Fade ${attack}/${release}ms · ${members.length} mic${members.length === 1 ? "" : "s"}`,
+      tertiary: "Set actions in Command tab",
+    };
+  }
   if (rule.action_target === "vmix") {
     const fn = VMIX_FN_LABELS[rule.vmix_function] || rule.vmix_function;
     const target =

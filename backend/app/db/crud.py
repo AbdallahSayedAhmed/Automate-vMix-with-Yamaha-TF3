@@ -6,6 +6,17 @@ from datetime import datetime, timezone
 
 from app.db.models import TriggerRule
 from app.schemas.trigger import TriggerRuleCreate, TriggerRuleUpdate
+import json
+
+
+def _serialize_duck_members(data: dict) -> dict:
+    members = data.get("duck_members")
+    if members is not None:
+        if isinstance(members, list):
+            data["duck_members"] = json.dumps([m.model_dump() if hasattr(m, "model_dump") else m for m in members])
+        elif members == []:
+            data["duck_members"] = "[]"
+    return data
 
 async def get_trigger(db: AsyncSession, trigger_id: int) -> Optional[TriggerRule]:
     """Get a single trigger rule by ID."""
@@ -24,7 +35,8 @@ async def get_active_triggers(db: AsyncSession) -> List[TriggerRule]:
 
 async def create_trigger(db: AsyncSession, trigger: TriggerRuleCreate) -> TriggerRule:
     """Create a new trigger rule."""
-    db_trigger = TriggerRule(**trigger.model_dump())
+    data = _serialize_duck_members(trigger.model_dump())
+    db_trigger = TriggerRule(**data)
     db.add(db_trigger)
     await db.commit()
     await db.refresh(db_trigger)
@@ -37,6 +49,7 @@ async def update_trigger(db: AsyncSession, trigger_id: int, trigger_update: Trig
         return None
         
     update_data = trigger_update.model_dump(exclude_unset=True)
+    update_data = _serialize_duck_members(update_data)
     for key, value in update_data.items():
         setattr(db_trigger, key, value)
         
@@ -152,7 +165,7 @@ async def duplicate_trigger(db: AsyncSession, trigger_id: int) -> Optional[Trigg
 
 async def bulk_create(db: AsyncSession, rules: list) -> List[TriggerRule]:
     """Create multiple triggers at once."""
-    db_triggers = [TriggerRule(**rule.model_dump()) for rule in rules]
+    db_triggers = [TriggerRule(**_serialize_duck_members(rule.model_dump())) for rule in rules]
     db.add_all(db_triggers)
     await db.commit()
     for t in db_triggers:

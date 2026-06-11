@@ -25,6 +25,12 @@ import {
   yamahaCmdNeedsChannel,
 } from "../constants/ruleConfig";
 import { ActivationToggle } from "./ActivationToggle";
+import { MultiMicDuckFields } from "./MultiMicDuckFields";
+import {
+  DEFAULT_DUCK_MEMBER,
+  parseMultiFade,
+  formatMultiFade,
+} from "../constants/duckGroupConfig";
 
 const inputStyle = {
   background: "rgba(0,0,0,0.35)",
@@ -95,6 +101,7 @@ export function RuleEditorDrawer({
   onSavePreset,
   onUpdatePreset,
   onRemovePreset,
+  meters = {},
 }) {
   const [tab, setTab] = useState("listen");
   const [presetEdit, setPresetEdit] = useState(null);
@@ -125,6 +132,8 @@ export function RuleEditorDrawer({
       "release_threshold",
       "silence_timeout_ms",
       "time_threshold",
+      "is_multi_duck",
+      "duck_members",
       "action_target",
       "yamaha_command",
       "yamaha_channel",
@@ -163,7 +172,7 @@ export function RuleEditorDrawer({
           <motion.aside
             className="fixed top-0 right-0 bottom-0 z-[160] flex flex-col glass-sheet"
             style={{
-              width: "min(520px, 100vw)",
+              width: form.is_multi_duck ? "min(720px, 100vw)" : "min(520px, 100vw)",
               borderRadius: "16px 0 0 16px",
             }}
             initial={{ x: "100%" }}
@@ -375,6 +384,44 @@ export function RuleEditorDrawer({
                     </>
                   ) : (
                     <>
+                      <Field label="Duck Mode" showHint={showFieldHints} hint="Single channel: one mic, one command. Multi-mic: many mics in one rule, each with its own command.">
+                        <div className="flex rounded-lg overflow-hidden w-fit">
+                          <SegmentBtn
+                            active={!form.is_multi_duck}
+                            onClick={() => {
+                              onChange("is_multi_duck", false);
+                            }}
+                          >
+                            Single Channel
+                          </SegmentBtn>
+                          <SegmentBtn
+                            active={!!form.is_multi_duck}
+                            onClick={() => {
+                              onChange("is_multi_duck", true);
+                              if (!form.duck_members?.length) {
+                                onChange("duck_members", [{ ...DEFAULT_DUCK_MEMBER }]);
+                              }
+                              if (!form.silence_timeout_ms) {
+                                onChange("silence_timeout_ms", 3000);
+                              }
+                              const fade = parseMultiFade(form.parameter_value);
+                              onChange("parameter_value", formatMultiFade(fade.attack, fade.release));
+                            }}
+                          >
+                            Multi-Mic Duck
+                          </SegmentBtn>
+                        </div>
+                      </Field>
+
+                      {form.is_multi_duck ? (
+                        <MultiMicDuckFields
+                          mode="listen"
+                          form={form}
+                          onChange={onChange}
+                          meters={meters}
+                        />
+                      ) : (
+                        <>
                       <Field
                         label="Channel to Monitor (1–40)"
                         hint="Yamaha input channel to monitor live meter data."
@@ -447,6 +494,8 @@ export function RuleEditorDrawer({
                           />
                         </Field>
                       </div>
+                        </>
+                      )}
                     </>
                   )}
                 </div>
@@ -454,6 +503,15 @@ export function RuleEditorDrawer({
 
               {tab === "command" && (
                 <div>
+                  {form.listen_source === "yamaha" && form.is_multi_duck ? (
+                    <MultiMicDuckFields
+                      mode="command"
+                      form={form}
+                      onChange={onChange}
+                      meters={meters}
+                    />
+                  ) : (
+                    <>
                   <Field
                     label="Command Target"
                     showHint={showFieldHints}
@@ -683,6 +741,8 @@ export function RuleEditorDrawer({
                           />
                         </Field>
                       </div>
+                    </>
+                  )}
                     </>
                   )}
                 </div>

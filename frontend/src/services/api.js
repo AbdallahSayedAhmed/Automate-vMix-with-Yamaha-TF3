@@ -74,6 +74,29 @@ export const api = {
 
   getVmixInputs: () => request(`${BASE_URL}/vmix/inputs`),
   getVmixStatus: () => request(`${BASE_URL}/vmix/status`),
+  getDuckGroups: () => request(`${BASE_URL}/duck-groups/`),
+
+  createDuckGroup: (group) =>
+    request(`${BASE_URL}/duck-groups/`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(group),
+    }),
+
+  updateDuckGroup: (id, group) =>
+    request(`${BASE_URL}/duck-groups/${id}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(group),
+    }),
+
+  deleteDuckGroup: (id) => request(`${BASE_URL}/duck-groups/${id}`, { method: 'DELETE' }),
+
+  toggleDuckGroup: (id) => request(`${BASE_URL}/duck-groups/${id}/toggle`, { method: 'PATCH' }),
+
+  duplicateDuckGroup: (id) =>
+    request(`${BASE_URL}/duck-groups/${id}/duplicate`, { method: 'POST' }),
+
   getSettings: () => request(`${BASE_URL}/settings/`),
   updateSettings: (settings) =>
     request(`${BASE_URL}/settings/`, {

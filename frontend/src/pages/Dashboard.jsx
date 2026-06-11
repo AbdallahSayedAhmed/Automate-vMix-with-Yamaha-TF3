@@ -26,7 +26,7 @@ const LiveClock = React.memo(function LiveClock() {
 export function Dashboard() {
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [logPanelOpen, setLogPanelOpen] = useState(true);
-  const { vmixConnected, yamahaConnected, logs, meters, triggeredRules } = useWebSocket();
+  const { vmixConnected, yamahaConnected, logs, meters, triggeredRules, actionStates } = useWebSocket();
   const prevVmix = React.useRef(vmixConnected);
   const prevYamaha = React.useRef(yamahaConnected);
 
@@ -164,6 +164,7 @@ export function Dashboard() {
             vmixConnected={vmixConnected}
             meters={meters}
             triggeredRules={triggeredRules}
+            actionStates={actionStates}
           />
         </motion.section>
 

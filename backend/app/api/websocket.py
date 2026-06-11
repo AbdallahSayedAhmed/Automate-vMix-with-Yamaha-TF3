@@ -65,6 +65,12 @@ class ConnectionManager:
             "data": {"rule_id": rule_id}
         })
 
+    async def broadcast_action_state(self, payload: Dict[str, Any]):
+        await self._broadcast({
+            "type": "ACTION_STATE_UPDATE",
+            "data": payload
+        })
+
     async def _broadcast(self, message: dict):
         dead_connections = []
         for connection in self.active_connections:

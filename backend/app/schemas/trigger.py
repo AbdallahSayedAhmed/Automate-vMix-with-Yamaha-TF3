@@ -1,6 +1,23 @@
-from pydantic import BaseModel, Field
-from typing import Optional
+from pydantic import BaseModel, Field, field_validator
+from typing import Optional, List, Any
 from datetime import datetime
+import json
+
+
+class DuckMemberConfig(BaseModel):
+    monitor_channel: int = Field(..., ge=1, le=40)
+    threshold: int = Field(-4000)
+    release_threshold: int = Field(-5000)
+    attack_ms: int = Field(700, ge=0)
+    release_ms: int = Field(700, ge=0)
+    action_target: str = Field("yamaha")
+    yamaha_command: str = Field("InCh/Fader/Smooth")
+    yamaha_channel: int = Field(10)
+    yamaha_mix: int = Field(0)
+    vmix_function: Optional[str] = None
+    vmix_target_input: Optional[int] = None
+    parameter_value: str = Field("-2500")
+
 
 class TriggerRuleBase(BaseModel):
     name: str = Field(..., description="Human-readable name for the trigger rule")
@@ -18,6 +35,8 @@ class TriggerRuleBase(BaseModel):
     release_threshold: Optional[int] = Field(None, description="Secondary threshold for ducking release (hysteresis)")
     silence_timeout_ms: Optional[int] = Field(None, description="Silence timeout for ducking")
     time_threshold: Optional[str] = Field(None, description="Time remaining threshold for vMix video playback (e.g., '00:01:00')")
+    is_multi_duck: bool = Field(False, description="Multi-mic duck rule with per-channel actions")
+    duck_members: Optional[List[DuckMemberConfig]] = Field(None, description="Per-mic duck configuration")
     
     action_target: str = Field('yamaha', description="'yamaha' or 'vmix'")
     yamaha_command: str = Field(..., description="Yamaha RCP parameter path (e.g., InCh/Fader/Level)")
@@ -47,6 +66,8 @@ class TriggerRuleUpdate(BaseModel):
     release_threshold: Optional[int] = None
     silence_timeout_ms: Optional[int] = None
     time_threshold: Optional[str] = None
+    is_multi_duck: Optional[bool] = None
+    duck_members: Optional[List[DuckMemberConfig]] = None
     action_target: Optional[str] = None
     yamaha_command: Optional[str] = None
     yamaha_channel: Optional[int] = None
@@ -63,6 +84,19 @@ class TriggerRuleResponse(TriggerRuleBase):
     last_fired_at: Optional[datetime] = None
     created_at: datetime
     updated_at: datetime
+
+    @field_validator("duck_members", mode="before")
+    @classmethod
+    def parse_duck_members(cls, v: Any):
+        if v is None or v == "":
+            return []
+        if isinstance(v, str):
+            try:
+                raw = json.loads(v)
+            except json.JSONDecodeError:
+                return []
+            return raw if isinstance(raw, list) else []
+        return v
 
     model_config = {
         "from_attributes": True

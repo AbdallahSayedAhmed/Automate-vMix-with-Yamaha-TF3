@@ -2,14 +2,13 @@ import asyncio
 import logging
 from typing import Callable, Optional, Awaitable, Dict
 
-from app.drivers.yamaha_meter_table import METER_TABLE
-
 logger = logging.getLogger(__name__)
 
 # TF series: mtrstart transmission expires after ~10s (Yamaha RCP spec §4.4)
 METER_STREAM_PATH = "MIXER:Current/InCh/PostOn"
 METER_INTERVAL_MS = 100
 METER_KEEPALIVE_SEC = 8
+TF_METER_ZERO_DB_INDEX = 126
 
 class YamahaRCPClient:
     """
@@ -313,19 +312,21 @@ class YamahaRCPClient:
         
         # ── Streaming Meter NOTIFY ──
         # NOTIFY mtr MIXER:Current/InCh/PostOn level 21 20 20 1f 1e 1c 24 ...
-        if msg_type == 'NOTIFY' and len(parts) > 4 and parts[1] == 'mtr' and parts[3] == 'level':
+        if msg_type == 'NOTIFY' and len(parts) > 3 and parts[1] == 'mtr':
             meter_addr = parts[2]
             if '/InCh/' not in meter_addr and '/Meter/InCh' not in meter_addr:
                 return
             if self._meter_callback and self._monitored_channels:
                 try:
                     # parts[4] is ch1, parts[5] is ch2, etc. (hex strings, 0–127 index)
-                    hex_values = parts[4:]
+                    hex_values = self._extract_stream_meter_values(parts)
+                    if not hex_values:
+                        return
                     for ch in self._monitored_channels:
                         ch_idx = ch - 1  # 0-based
                         if 0 <= ch_idx < len(hex_values):
                             idx_val = int(hex_values[ch_idx], 16)
-                            db_level = METER_TABLE.get(idx_val, -32768)
+                            db_level = self._tf_meter_index_to_centidb(idx_val)
 
                             self._meter_received_count += 1
                             if self._meter_received_count <= 5:
@@ -346,8 +347,7 @@ class YamahaRCPClient:
             # This handles Fader/Level and other state changes
             pass
             
-        # ── OK Responses (for request_value AND meter polling) ──
-        # OK get MIXER:Current/InCh/Meter/Level 0 0 -3200
+        # ── OK Responses (for request_value) ──
         # OK MIXER:Current/InCh/Fader/Level 0 0 -1000
         if msg_type == 'OK':
             # Try to match pending requests first
@@ -364,17 +364,6 @@ class YamahaRCPClient:
                     self._pending_requests[key].set_result(parts[5])
                     return
 
-            # If it's a meter OK response (from our polling), feed it to the meter callback
-            if 'Meter/Level' in line and self._meter_callback:
-                try:
-                    level = int(parts[-1])
-                    ch_index = int(parts[-3])
-                    self._meter_received_count += 1
-                    if self._meter_received_count <= 5:
-                        logger.info(f"[METER POLL OK] ch_index={ch_index} -> ch_1based={ch_index + 1}, level={level}")
-                    await self._meter_callback(ch_index + 1, level)
-                except (ValueError, IndexError) as e:
-                    logger.warning(f"[METER POLL PARSE ERROR] Could not parse OK meter line: '{line}' — {e}")
             return
         
         # ── OKm (meter-specific short response from some firmwares) ──
@@ -386,6 +375,24 @@ class YamahaRCPClient:
             except (ValueError, IndexError):
                 pass
             return
+
+    @staticmethod
+    def _is_meter_hex_token(token: str) -> bool:
+        token = token.strip()
+        if token.lower().startswith("0x"):
+            token = token[2:]
+        return bool(token) and all(c in "0123456789abcdefABCDEF" for c in token)
+
+    def _extract_stream_meter_values(self, parts: list[str]) -> list[str]:
+        if len(parts) <= 3:
+            return []
+        raw = parts[4:] if parts[3].lower() == "level" else parts[3:]
+        return [token for token in raw if self._is_meter_hex_token(token)]
+
+    @staticmethod
+    def _tf_meter_index_to_centidb(idx_val: int) -> int:
+        """TF meter bytes are dB values offset by 126 (Companion Yamaha-RCP behavior)."""
+        return (max(0, min(127, idx_val)) - TF_METER_ZERO_DB_INDEX) * 100
 
     async def _request_meter_stream(self):
         """Request live input meter NOTIFY stream (TF: mtrinfo → mtrstart InCh/PostOn)."""
@@ -411,10 +418,11 @@ class YamahaRCPClient:
     def set_monitored_channels(self, channels: set):
         """Update the set of channels to receive meter NOTIFY data for."""
         prev = self._monitored_channels
-        self._monitored_channels = set(channels)
-        if channels != prev:
-            logger.info(f"Yamaha meter stream active for channels: {sorted(channels)}")
-            if self.connected and channels:
+        new_channels = set(channels)
+        self._monitored_channels = new_channels
+        if new_channels != prev:
+            logger.info(f"Yamaha meter stream active for channels: {sorted(new_channels)}")
+            if self.connected and new_channels:
                 asyncio.create_task(self._request_meter_stream())
 
     async def _handle_disconnect(self):

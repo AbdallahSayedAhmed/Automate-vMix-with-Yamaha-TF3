@@ -1,10 +1,12 @@
 import asyncio
+import json
 import logging
 from collections import deque
 from datetime import datetime
 from typing import Dict, Any, List, Callable, Awaitable, Optional
 import time
 
+from sqlalchemy import or_
 from sqlalchemy.future import select
 
 from app.db.database import AsyncSessionLocal
@@ -316,6 +318,14 @@ class TriggerEngine:
 
     async def handle_yamaha_meter(self, ch_index: int, level: int):
         """Called by Yamaha meter stream with (channel_1based, level in centidB)."""
+        asyncio.create_task(self._broadcast_meter(ch_index, level))
+
+        from app.engine.group_duck_engine import group_duck_engine
+        try:
+            await group_duck_engine.handle_meter(ch_index, level, self)
+        except Exception as e:
+            logger.error(f"[ENGINE] Multi-duck meter handler error: {e}")
+
         self._meter_log_count += 1
         if self._meter_log_count <= 10:
             logger.info(f"[ENGINE] handle_yamaha_meter called: ch={ch_index}, level={level}")
@@ -332,6 +342,7 @@ class TriggerEngine:
                     TriggerRule.is_active == True,
                     TriggerRule.listen_source == 'yamaha',
                     TriggerRule.trigger_event == 'YamahaMeter',
+                    or_(TriggerRule.is_multi_duck == False, TriggerRule.is_multi_duck.is_(None)),
                     TriggerRule.vmix_input_number == ch_index
                 ))
                 rules_raw = result.scalars().all()
@@ -347,8 +358,6 @@ class TriggerEngine:
                 release_threshold = threshold - 1000
             silence_timeout = rule.get('silence_timeout_ms') or 3000
 
-            asyncio.create_task(self._broadcast_meter(ch_index, level))
-
             if level >= threshold:
                 state['last_speech_time'] = now
                 if state['status'] == 'restoring':
@@ -360,10 +369,13 @@ class TriggerEngine:
                     self._start_meter_cycle(rule, state, self._duck_and_save(rule, state))
             elif level >= release_threshold:
                 state['last_speech_time'] = now
-            elif state['status'] == 'active' and state.get('saved_value') is not None:
+            elif state['status'] == 'active':
                 if (now - state['last_speech_time']) * 1000.0 >= silence_timeout:
-                    state['status'] = 'restoring'
-                    self._start_meter_cycle(rule, state, self._restore_value(rule, state))
+                    if state.get('saved_value') is not None:
+                        state['status'] = 'restoring'
+                        self._start_meter_cycle(rule, state, self._restore_value(rule, state))
+                    else:
+                        state['status'] = 'idle'
 
     def _start_meter_cycle(self, rule: Dict[str, Any], state: Dict[str, Any], coro):
         self._cancel_meter_cycle(state)
@@ -399,19 +411,19 @@ class TriggerEngine:
             async with state['lock']:
                 saved = await self._capture_action_value(rule)
                 if saved is None:
-                    state['status'] = 'idle'
                     state['saved_value'] = None
                     await self._add_log(
                         "WARNING",
-                        f"Could not read current state — duck skipped for '{rule['name']}'.",
+                        f"Could not read current state for '{rule['name']}'; applying without restore snapshot.",
                         {"rule_id": rule['id']},
                     )
-                    return
 
                 state['saved_value'] = saved
                 await self._apply_meter_action(
                     rule, rule['parameter_value'], is_restore=False, saved_start=saved
                 )
+                asyncio.create_task(self._broadcast_trigger(rule['id']))
+                asyncio.create_task(self._record_fire(rule['id']))
                 state['status'] = 'active'
                 await self._add_log(
                     "INFO",
@@ -476,7 +488,7 @@ class TriggerEngine:
             cmd = rule['yamaha_command']
             ch, mix = rule['yamaha_channel'], rule['yamaha_mix']
 
-            if cmd.endswith('/Smooth') or (is_restore and self._is_yamaha_level_command(cmd)):
+            if cmd.endswith('/Smooth'):
                 base_cmd = self._yamaha_level_command(cmd)
                 await self._cancel_yamaha_fade(rule)
                 duration = self._smooth_duration_ms(rule)
@@ -528,10 +540,7 @@ class TriggerEngine:
             )
             return
 
-        if is_restore:
-            await self._execute_action(rule, str(value), skip_collision_check=True)
-        else:
-            await self._execute_action(rule, rule['parameter_value'], skip_collision_check=True)
+        await self._execute_action(rule, str(value), skip_collision_check=True)
 
     async def _process_match(self, source: str, event_name: str, input_number: int):
         cache_key = f"{source}_{event_name}_{input_number}"
@@ -569,6 +578,7 @@ class TriggerEngine:
             "listen_source": r.listen_source, "trigger_event": r.trigger_event, "vmix_input_number": r.vmix_input_number,
             "threshold": r.threshold, "release_threshold": r.release_threshold, "silence_timeout_ms": r.silence_timeout_ms,
             "time_threshold": r.time_threshold,
+            "is_multi_duck": r.is_multi_duck, "duck_members": r.duck_members,
             "action_target": r.action_target, "yamaha_command": r.yamaha_command, "yamaha_channel": r.yamaha_channel, "yamaha_mix": r.yamaha_mix,
             "vmix_function": r.vmix_function, "vmix_target_input": r.vmix_target_input,
             "parameter_value": r.parameter_value, "delay_ms": r.delay_ms
@@ -577,6 +587,10 @@ class TriggerEngine:
     async def _broadcast_trigger(self, rule_id: int):
         from app.api.websocket import ws_manager
         await ws_manager.broadcast_trigger(rule_id)
+
+    async def _broadcast_action_state(self, payload: Dict[str, Any]):
+        from app.api.websocket import ws_manager
+        await ws_manager.broadcast_action_state(payload)
 
     async def _execute_rule_delayed(self, rule: Dict[str, Any]):
         if rule['delay_ms'] > 0:
@@ -594,19 +608,21 @@ class TriggerEngine:
 
     async def _execute_action(self, rule: Dict[str, Any], target_value: str, skip_collision_check: bool = False):
         from app.drivers import yamaha_tcp
+        from app.core.config import settings
         import httpx
 
         target_key = f"{rule['action_target']}_{rule.get('yamaha_command')}_{rule.get('yamaha_channel')}_{rule.get('yamaha_mix')}_{rule.get('vmix_function')}_{rule.get('vmix_target_input')}"
         now = time.time()
+        sort_order = rule.get('sort_order', 0)
         
         # Check collision: if this target was modified within 0.5s by a HIGHER priority rule (lower sort_order), skip.
         if not skip_collision_check and target_key in self._fader_locks:
             last_time, last_priority = self._fader_locks[target_key]
-            if now - last_time < 0.5 and rule['sort_order'] > last_priority:
+            if now - last_time < 0.5 and sort_order > last_priority:
                 await self._add_log("WARNING", f"Collision prevented: Rule '{rule['name']}' blocked by higher priority rule.", {"rule_id": rule['id']})
                 return
                 
-        self._fader_locks[target_key] = (now, rule['sort_order'])
+        self._fader_locks[target_key] = (now, sort_order)
 
         if rule['action_target'] == 'yamaha':
             if not yamaha_tcp.connected:
@@ -662,12 +678,14 @@ class TriggerEngine:
 
         elif rule['action_target'] == 'vmix':
             try:
-                func = rule['vmix_function']
-                input_param = f"&Input={rule['vmix_target_input']}" if rule['vmix_target_input'] else ""
-                url = f"http://127.0.0.1:8088/api/?Function={func}&Value={target_value}{input_param}"
+                func = rule.get('vmix_function') or 'SetVolume'
+                url = f"http://{settings.vmix_host}:{settings.vmix_http_port}/api/"
+                params = {"Function": func, "Value": target_value}
+                if rule.get('vmix_target_input'):
+                    params["Input"] = rule['vmix_target_input']
                 
                 async with httpx.AsyncClient() as client:
-                    resp = await client.get(url, timeout=2.0)
+                    resp = await client.get(url, params=params, timeout=2.0)
                     if resp.status_code == 200:
                         await self._add_log("SUCCESS", f"Sent to vMix: {func} val={target_value}", {"rule_id": rule['id']})
                     else:
@@ -676,31 +694,55 @@ class TriggerEngine:
                 await self._add_log("ERROR", f"Failed to send to vMix: {e}", {"rule_id": rule['id']})
 
     def invalidate_cache(self):
+        from app.engine.group_duck_engine import group_duck_engine
         for state in self._ducking_state.values():
             self._cancel_meter_cycle(state)
         self.rules_cache.clear()
         self._ducking_state.clear()
+        group_duck_engine.clear()
         logger.info("[ENGINE] Rules cache invalidated")
         # Sync monitored channels with the Yamaha driver
         asyncio.create_task(self._sync_monitored_channels())
 
+    def _collect_yamaha_meter_channels(self, rules: List[TriggerRule]) -> set[int]:
+        channels = set()
+        for rule in rules:
+            if rule.is_multi_duck:
+                try:
+                    members = json.loads(rule.duck_members or "[]")
+                except (TypeError, json.JSONDecodeError):
+                    members = []
+                for member in members:
+                    try:
+                        channel = int(member.get("monitor_channel") or 0)
+                    except (TypeError, ValueError):
+                        channel = 0
+                    if channel > 0:
+                        channels.add(channel)
+            elif rule.vmix_input_number:
+                channels.add(rule.vmix_input_number)
+        return channels
+
     async def _sync_monitored_channels(self):
-        """Query the DB for active Yamaha meter rules and tell the driver which channels to poll."""
+        """Query Yamaha meter rules and sync driver channels.
+
+        Meter subscriptions include inactive rules so the UI meters can preview
+        signal. Action execution still queries active rules only.
+        """
         try:
             from app.drivers import yamaha_tcp
+            from app.engine.group_duck_engine import group_duck_engine
+            channels = set()
             async with AsyncSessionLocal() as db:
                 result = await db.execute(select(TriggerRule).where(
-                    TriggerRule.is_active == True,
                     TriggerRule.listen_source == 'yamaha',
-                    TriggerRule.trigger_event == 'YamahaMeter'
+                    TriggerRule.trigger_event == 'YamahaMeter',
                 ))
-                rules = result.scalars().all()
-                channels = set()
-                for r in rules:
-                    if r.vmix_input_number:
-                        channels.add(r.vmix_input_number)
-                yamaha_tcp.set_monitored_channels(channels)
-                logger.info(f"[ENGINE] Synced monitored channels: {sorted(channels)}")
+                channels = self._collect_yamaha_meter_channels(list(result.scalars().all()))
+            await group_duck_engine.reload_cache()
+            channels.update(group_duck_engine.get_monitored_channels())
+            yamaha_tcp.set_monitored_channels(channels)
+            logger.info(f"[ENGINE] Synced monitored channels: {sorted(channels)}")
         except Exception as e:
             logger.error(f"[ENGINE] Failed to sync monitored channels: {e}")
 
