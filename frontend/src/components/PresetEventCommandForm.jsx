@@ -1,13 +1,10 @@
-import { Video, Mic, Speaker, MonitorSpeaker } from 'lucide-react';
+import { Video, Mic, Speaker, MonitorSpeaker, Plus, Minus, Settings } from 'lucide-react';
 import {
   VMIX_EVENT_LABELS, VMIX_EVENT_INFO,
   YAMAHA_CMD_LABELS, YAMAHA_CMD_INFO,
   VMIX_FN_LABELS, VMIX_FN_INFO,
   DEFAULT_RULE_FORM,
-  yamahaCmdNeedsMix,
-  yamahaCmdNeedsChannel,
 } from '../constants/ruleConfig';
-import { MultiMicDuckFields } from './MultiMicDuckFields';
 import { DEFAULT_DUCK_MEMBER, parseMultiFade, formatMultiFade } from '../constants/duckGroupConfig';
 
 const inputStyle = {
@@ -71,9 +68,31 @@ export function PresetEventCommandForm({ form, onChange }) {
   const yamahaCmd = form.yamaha_command || 'InCh/Fader/Level';
   const vmixFn = form.vmix_function || 'SetVolume';
 
-  const isSmooth = yamahaCmd.endsWith("/Smooth");
-  const needsMix = yamahaCmdNeedsMix(yamahaCmd);
-  const needsChannel = yamahaCmdNeedsChannel(yamahaCmd);
+  const members = form.duck_members || [];
+  const micCount = Math.max(2, members.length);
+
+  const updateMicCount = (newCount) => {
+    if (newCount < 2) newCount = 2;
+    if (newCount > 16) newCount = 16;
+    
+    const nextMembers = [...members];
+    // Fill if growing
+    while (nextMembers.length < newCount) {
+        nextMembers.push({ ...DEFAULT_DUCK_MEMBER, monitor_channel: nextMembers.length + 1 });
+    }
+    // Trim if shrinking
+    while (nextMembers.length > newCount) {
+        nextMembers.pop();
+    }
+    onChange("duck_members", nextMembers);
+  };
+
+  const updateMember = (idx, field, value) => {
+    const next = [...members];
+    if (!next[idx]) next[idx] = { ...DEFAULT_DUCK_MEMBER };
+    next[idx] = { ...next[idx], [field]: value };
+    onChange("duck_members", next);
+  };
 
   return (
     <div className="pt-1 space-y-6 max-h-[60vh] overflow-y-auto pr-2" style={{ scrollbarWidth: 'thin' }}>
@@ -141,7 +160,7 @@ export function PresetEventCommandForm({ form, onChange }) {
                   onClick={() => {
                     onChange("is_multi_duck", true);
                     if (!form.duck_members?.length) {
-                      onChange("duck_members", [{ ...DEFAULT_DUCK_MEMBER }]);
+                      onChange("duck_members", [{ ...DEFAULT_DUCK_MEMBER }, { ...DEFAULT_DUCK_MEMBER, monitor_channel: 2 }]);
                     }
                     if (!form.silence_timeout_ms) {
                       onChange("silence_timeout_ms", 3000);
@@ -156,31 +175,43 @@ export function PresetEventCommandForm({ form, onChange }) {
             </Field>
 
             {form.is_multi_duck ? (
-               <MultiMicDuckFields mode="listen" form={form} onChange={onChange} meters={{}} />
-            ) : (
-               <>
-                 <Field label="Channel to Monitor (1–40)" hint="Yamaha input channel to monitor live meter data.">
-                   <input
-                     type="number"
-                     min="1"
-                     max="40"
-                     value={form.vmix_input_number || ""}
-                     onChange={(e) => onChange("vmix_input_number", parseInt(e.target.value) || null)}
-                     style={inputStyle}
-                   />
-                 </Field>
-                 <div className="grid grid-cols-3 gap-2 mt-2">
-                   <Field label="Attack (Thr)" hint="Typical: -4000">
-                     <input type="number" placeholder="-4000" value={form.threshold ?? ""} onChange={(e) => onChange("threshold", parseInt(e.target.value))} style={inputStyle} />
-                   </Field>
-                   <Field label="Release (Rel)" hint="Typical: -5000">
-                     <input type="number" placeholder="-5000" value={form.release_threshold ?? ""} onChange={(e) => onChange("release_threshold", parseInt(e.target.value))} style={inputStyle} />
-                   </Field>
+               <div className="space-y-4 mt-2">
+                 <div className="grid grid-cols-2 gap-4">
                    <Field label="Silence (ms)" hint="e.g. 3000">
-                     <input type="number" placeholder="3000" value={form.silence_timeout_ms ?? ""} onChange={(e) => onChange("silence_timeout_ms", parseInt(e.target.value))} style={inputStyle} />
+                      <input type="number" value={form.silence_timeout_ms || 3000} onChange={e => onChange("silence_timeout_ms", parseInt(e.target.value))} style={inputStyle} />
+                   </Field>
+                   <Field label="Number of Mics" hint="How many to listen to">
+                      <div className="flex items-center gap-3 bg-black/30 rounded-lg p-2 border border-white/10 w-fit h-[34px]">
+                         <button type="button" onClick={() => updateMicCount(micCount - 1)} className="p-1 rounded bg-white/5 hover:bg-white/10 text-white"><Minus size={14}/></button>
+                         <span className="text-sm font-bold w-6 text-center text-[#20D9FF]">{micCount}</span>
+                         <button type="button" onClick={() => updateMicCount(micCount + 1)} className="p-1 rounded bg-white/5 hover:bg-white/10 text-white"><Plus size={14}/></button>
+                      </div>
                    </Field>
                  </div>
-               </>
+
+                 <div className="p-3 rounded-lg bg-black/20 border border-white/5">
+                   <p className="text-[10px] font-bold text-[#8B93A8] uppercase mb-2">Assign Mic Channels</p>
+                   <div className="grid grid-cols-4 gap-2">
+                      {members.slice(0, micCount).map((m, idx) => (
+                         <div key={idx}>
+                           <label className="block text-[9px] text-[#5A6278] uppercase font-bold mb-1">Mic {idx+1}</label>
+                           <input type="number" value={m.monitor_channel || ""} onChange={e => updateMember(idx, "monitor_channel", parseInt(e.target.value))} style={inputStyle} placeholder={`Ch ${idx+1}`} />
+                         </div>
+                      ))}
+                   </div>
+                 </div>
+               </div>
+            ) : (
+               <Field label="Channel to Monitor (1–40)" hint="Yamaha input channel to monitor live meter data.">
+                 <input
+                   type="number"
+                   min="1"
+                   max="40"
+                   value={form.vmix_input_number || ""}
+                   onChange={(e) => onChange("vmix_input_number", parseInt(e.target.value) || null)}
+                   style={inputStyle}
+                 />
+               </Field>
             )}
           </>
         )}
@@ -192,7 +223,62 @@ export function PresetEventCommandForm({ form, onChange }) {
         </p>
 
         {listen === 'yamaha' && form.is_multi_duck ? (
-           <MultiMicDuckFields mode="command" form={form} onChange={onChange} meters={{}} />
+           <div className="space-y-4">
+              {(() => {
+                 const { attack, release } = parseMultiFade(form.parameter_value);
+                 return (
+                   <div className="grid grid-cols-2 gap-2">
+                     <Field label="Fade Attack (ms)">
+                        <input type="number" value={attack} onChange={e => onChange("parameter_value", formatMultiFade(parseInt(e.target.value)||0, release))} style={inputStyle} />
+                     </Field>
+                     <Field label="Fade Release (ms)">
+                        <input type="number" value={release} onChange={e => onChange("parameter_value", formatMultiFade(attack, parseInt(e.target.value)||0))} style={inputStyle} />
+                     </Field>
+                   </div>
+                 );
+              })()}
+
+              <div className="space-y-2">
+                 <p className="text-[10px] font-bold text-[#8B93A8] uppercase mb-1">Set actions for each mic</p>
+                 {members.slice(0, micCount).map((m, idx) => (
+                   <div key={idx} className="p-3 rounded-xl border border-white/5" style={{ background: "rgba(0,0,0,0.2)" }}>
+                      <p className="text-[11px] font-bold text-[#D8DCE6] mb-2 flex items-center gap-1.5">
+                         <Settings size={12} className="text-[#39E58C]"/> Action for Mic {idx+1}
+                      </p>
+                      
+                      <div className="grid grid-cols-2 gap-2">
+                         <div>
+                           <label className="block text-[9px] text-[#5A6278] uppercase font-bold mb-1">Target</label>
+                           <select value={m.action_target || 'yamaha'} onChange={e => updateMember(idx, 'action_target', e.target.value)} style={inputStyle}>
+                              <option value="yamaha">Yamaha</option>
+                              <option value="vmix">vMix</option>
+                           </select>
+                         </div>
+
+                         {(m.action_target || 'yamaha') === 'yamaha' ? (
+                            <div>
+                               <label className="block text-[9px] text-[#5A6278] uppercase font-bold mb-1">Command</label>
+                               <select value={m.yamaha_command || 'InCh/Fader/Smooth'} onChange={e => updateMember(idx, 'yamaha_command', e.target.value)} style={inputStyle}>
+                                  {Object.entries(YAMAHA_CMD_LABELS).map(([v, l]) => (
+                                    <option key={v} value={v} style={{ background: '#151B27' }}>{l}</option>
+                                  ))}
+                               </select>
+                            </div>
+                         ) : (
+                            <div>
+                               <label className="block text-[9px] text-[#5A6278] uppercase font-bold mb-1">Function</label>
+                               <select value={m.vmix_function || 'SetVolume'} onChange={e => updateMember(idx, 'vmix_function', e.target.value)} style={inputStyle}>
+                                  {Object.entries(VMIX_FN_LABELS).map(([v, l]) => (
+                                    <option key={v} value={v} style={{ background: '#151B27' }}>{l}</option>
+                                  ))}
+                               </select>
+                            </div>
+                         )}
+                      </div>
+                   </div>
+                 ))}
+              </div>
+           </div>
         ) : (
            <>
             <Field label="Send To">
@@ -207,138 +293,33 @@ export function PresetEventCommandForm({ form, onChange }) {
             </Field>
 
             {target === 'yamaha' ? (
-              <>
-                <Field label="Yamaha Command">
-                  <select
-                    value={yamahaCmd}
-                    onChange={(e) => onChange('yamaha_command', e.target.value)}
-                    style={inputStyle}
-                  >
-                    {Object.entries(YAMAHA_CMD_LABELS).map(([v, l]) => (
-                      <option key={v} value={v} style={{ background: '#151B27' }}>{l}</option>
-                    ))}
-                  </select>
-                </Field>
-                
-                <div className="grid grid-cols-2 gap-2">
-                  {needsChannel && (
-                    <Field label="Channel (Ch)">
-                      <input
-                        type="number"
-                        value={form.yamaha_channel ?? ""}
-                        onChange={(e) => onChange("yamaha_channel", parseInt(e.target.value) || 0)}
-                        style={inputStyle}
-                      />
-                    </Field>
-                  )}
-                  {needsMix && (
-                    <Field label="Mix (Mx)">
-                      <input
-                        type="number"
-                        value={form.yamaha_mix ?? ""}
-                        onChange={(e) => onChange("yamaha_mix", parseInt(e.target.value) || 0)}
-                        style={inputStyle}
-                      />
-                    </Field>
-                  )}
-                </div>
-
-                {isSmooth ? (
-                  (() => {
-                    const sp = (form.parameter_value || "").split(",");
-                    const endLevel = sp.length >= 3 ? sp[1] : sp[0];
-                    const duration = sp.length >= 3 ? sp[2] : sp[1];
-                    const updateSmooth = (newEnd, newDur) =>
-                      onChange("parameter_value", `${newEnd || ""},${newDur || ""}`);
-                    return (
-                      <div className="grid grid-cols-2 gap-2">
-                        <Field label="End Level">
-                          <input
-                            type="text"
-                            placeholder="-2000"
-                            value={endLevel || ""}
-                            onChange={(e) => updateSmooth(e.target.value, duration)}
-                            style={{ ...inputStyle, fontFamily: "monospace" }}
-                          />
-                        </Field>
-                        <Field label="Duration (ms)">
-                          <input
-                            type="text"
-                            placeholder="2000"
-                            value={duration || ""}
-                            onChange={(e) => updateSmooth(endLevel, e.target.value)}
-                            style={{ ...inputStyle, fontFamily: "monospace" }}
-                          />
-                        </Field>
-                      </div>
-                    );
-                  })()
-                ) : (
-                  <Field label={yamahaCmd === "ssrecall_ex" ? "Scene Number" : "Value"}>
-                    <input
-                      type="text"
-                      placeholder={yamahaCmd === "ssrecall_ex" ? "1" : "-1000"}
-                      value={form.parameter_value ?? ""}
-                      onChange={(e) => onChange("parameter_value", e.target.value)}
-                      style={{ ...inputStyle, fontFamily: "monospace" }}
-                    />
-                  </Field>
-                )}
-              </>
+              <Field label="Yamaha Command">
+                <select
+                  value={yamahaCmd}
+                  onChange={(e) => onChange('yamaha_command', e.target.value)}
+                  style={inputStyle}
+                >
+                  {Object.entries(YAMAHA_CMD_LABELS).map(([v, l]) => (
+                    <option key={v} value={v} style={{ background: '#151B27' }}>{l}</option>
+                  ))}
+                </select>
+              </Field>
             ) : (
-              <>
-                <Field label="vMix Function">
-                  <select
-                    value={vmixFn}
-                    onChange={(e) => onChange('vmix_function', e.target.value)}
-                    style={inputStyle}
-                  >
-                    {Object.entries(VMIX_FN_LABELS).map(([v, l]) => (
-                      <option key={v} value={v} style={{ background: '#151B27' }}>{l}</option>
-                    ))}
-                  </select>
-                </Field>
-                <div className="grid grid-cols-2 gap-2">
-                  <Field label="Target Input">
-                    <input
-                      type="text"
-                      placeholder="e.g. 1"
-                      value={form.vmix_target_input || ""}
-                      onChange={(e) => onChange("vmix_target_input", e.target.value)}
-                      style={inputStyle}
-                    />
-                  </Field>
-                  <Field label="Value">
-                    <input
-                      type="text"
-                      placeholder="e.g. 100"
-                      value={form.parameter_value || ""}
-                      onChange={(e) => onChange("parameter_value", e.target.value)}
-                      style={inputStyle}
-                    />
-                  </Field>
-                </div>
-              </>
+              <Field label="vMix Function">
+                <select
+                  value={vmixFn}
+                  onChange={(e) => onChange('vmix_function', e.target.value)}
+                  style={inputStyle}
+                >
+                  {Object.entries(VMIX_FN_LABELS).map(([v, l]) => (
+                    <option key={v} value={v} style={{ background: '#151B27' }}>{l}</option>
+                  ))}
+                </select>
+              </Field>
             )}
            </>
         )}
       </div>
-
-      <div className="pt-3" style={{ borderTop: '1px solid rgba(255,255,255,0.06)' }}>
-        <p className="text-[10px] font-bold uppercase tracking-wider mb-3" style={{ color: '#8B93A8' }}>
-          Settings
-        </p>
-        <Field label="Delay (ms)">
-          <input
-            type="number"
-            min="0"
-            value={form.delay_ms ?? 0}
-            onChange={(e) => onChange("delay_ms", parseInt(e.target.value) || 0)}
-            style={inputStyle}
-          />
-        </Field>
-      </div>
-
     </div>
   );
 }
