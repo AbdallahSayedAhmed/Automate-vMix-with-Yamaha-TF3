@@ -152,6 +152,8 @@ export const DEFAULT_RULE_FORM = {
   is_active: true,
   is_multi_duck: false,
   duck_members: [],
+  is_multi_action: false,
+  actions: [],
 };
 
 export const DEFAULT_PRESETS = [
@@ -314,6 +316,16 @@ export function formatCommandDetail(rule) {
       tertiary: "Set actions in Command tab",
     };
   }
+  if (rule.is_multi_action && rule.listen_source === 'vmix') {
+    const acts = Array.isArray(rule.actions) ? rule.actions : [];
+    return {
+      badge: 'MULTI-ACTION',
+      badgeColor: '#20D9FF',
+      primary: `${acts.length} action${acts.length === 1 ? '' : 's'}`,
+      secondary: 'Expand row to see each action',
+      tertiary: 'Set actions in Command tab',
+    };
+  }
   if (rule.action_target === "vmix") {
     const fn = VMIX_FN_LABELS[rule.vmix_function] || rule.vmix_function;
     const target =
@@ -363,6 +375,7 @@ export function ruleSearchText(rule) {
     YAMAHA_CMD_LABELS[rule.yamaha_command],
     VMIX_FN_LABELS[rule.vmix_function],
   ]
+
     .filter((v) => v != null && v !== "")
     .join(" ")
     .toLowerCase();
@@ -407,8 +420,7 @@ export function yamahaCmdNeedsMix(cmd) {
     cmd.includes("/ToMix") ||
     cmd.includes("/ToFX") ||
     cmd.includes("Mix/Fader") ||
-    cmd.includes("USB/Record") ||
-    cmd.includes("FXRTN")
+    cmd.includes("USB/Record")
   );
 }
 

@@ -9,13 +9,14 @@ from app.schemas.trigger import TriggerRuleCreate, TriggerRuleUpdate
 import json
 
 
-def _serialize_duck_members(data: dict) -> dict:
-    members = data.get("duck_members")
-    if members is not None:
-        if isinstance(members, list):
-            data["duck_members"] = json.dumps([m.model_dump() if hasattr(m, "model_dump") else m for m in members])
-        elif members == []:
-            data["duck_members"] = "[]"
+def _serialize_json_fields(data: dict) -> dict:
+    for field in ["duck_members", "actions"]:
+        members = data.get(field)
+        if members is not None:
+            if isinstance(members, list):
+                data[field] = json.dumps([m.model_dump() if hasattr(m, "model_dump") else m for m in members])
+            elif members == []:
+                data[field] = "[]"
     return data
 
 async def get_trigger(db: AsyncSession, trigger_id: int) -> Optional[TriggerRule]:
@@ -35,7 +36,7 @@ async def get_active_triggers(db: AsyncSession) -> List[TriggerRule]:
 
 async def create_trigger(db: AsyncSession, trigger: TriggerRuleCreate) -> TriggerRule:
     """Create a new trigger rule."""
-    data = _serialize_duck_members(trigger.model_dump())
+    data = _serialize_json_fields(trigger.model_dump())
     db_trigger = TriggerRule(**data)
     db.add(db_trigger)
     await db.commit()
@@ -49,7 +50,7 @@ async def update_trigger(db: AsyncSession, trigger_id: int, trigger_update: Trig
         return None
         
     update_data = trigger_update.model_dump(exclude_unset=True)
-    update_data = _serialize_duck_members(update_data)
+    update_data = _serialize_json_fields(update_data)
     for key, value in update_data.items():
         setattr(db_trigger, key, value)
         
@@ -154,7 +155,13 @@ async def duplicate_trigger(db: AsyncSession, trigger_id: int) -> Optional[Trigg
         if c.name not in ('id', 'created_at', 'updated_at', 'fire_count', 'last_fired_at', 'name', 'sort_order')
     }
     data['name'] = _next_copy_name(names, source.name)
-    data['sort_order'] = max_order + 1
+    
+    target_order = source.sort_order + 1
+    for r in all_rules:
+        if r.sort_order >= target_order:
+            r.sort_order += 1
+            
+    data['sort_order'] = target_order
     data['fire_count'] = 0
     data['last_fired_at'] = None
     db_trigger = TriggerRule(**data)
@@ -165,7 +172,7 @@ async def duplicate_trigger(db: AsyncSession, trigger_id: int) -> Optional[Trigg
 
 async def bulk_create(db: AsyncSession, rules: list) -> List[TriggerRule]:
     """Create multiple triggers at once."""
-    db_triggers = [TriggerRule(**_serialize_duck_members(rule.model_dump())) for rule in rules]
+    db_triggers = [TriggerRule(**_serialize_json_fields(rule.model_dump())) for rule in rules]
     db.add_all(db_triggers)
     await db.commit()
     for t in db_triggers:

@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Copy, ClipboardPaste, Plus, Trash2, Speaker } from "lucide-react";
+import { Copy, ClipboardPaste, Plus, Trash2, Speaker, CopyPlus } from "lucide-react";
 import {
   DEFAULT_DUCK_MEMBER,
   LISTEN_COPY_FIELDS,
@@ -114,6 +114,13 @@ export function MultiMicDuckFields({ mode = "listen", form, onChange, meters = {
     ]);
   };
 
+  const duplicateMember = (idx) => {
+    const member = { ...members[idx], monitor_channel: Math.min((members[idx].monitor_channel || 1) + 1, 40) };
+    const newMembers = [...members];
+    newMembers.splice(idx + 1, 0, member);
+    setMembers(newMembers);
+  };
+
   const removeMember = (idx) => {
     if (members.length <= 1) return;
     setMembers(members.filter((_, i) => i !== idx));
@@ -194,15 +201,6 @@ export function MultiMicDuckFields({ mode = "listen", form, onChange, meters = {
     );
   };
 
-  const copyAllCommand = () =>
-    setAllClip({
-      kind: "command",
-      data: Object.fromEntries(commandFields.map((f) => [f, members[0]?.[f]])),
-    });
-  const pasteAllCommand = () => {
-    if (!allClip || allClip.kind !== "command") return;
-    setMembers(members.map((m) => ({ ...m, ...allClip.data })));
-  };
   const copyFullMic = (idx = 0) =>
     setAllClip({
       kind: "full",
@@ -359,6 +357,15 @@ export function MultiMicDuckFields({ mode = "listen", form, onChange, meters = {
                         >
                           All
                         </button>
+                        <div className="w-[1px] h-4 bg-white/10 mx-1 self-center" />
+                        <button
+                          type="button"
+                          onClick={() => duplicateMember(idx)}
+                          title="Duplicate mic below"
+                          style={{ ...btnSm, padding: "2px 5px" }}
+                        >
+                          <CopyPlus size={10} />
+                        </button>
                       </div>
                     </td>
                     <td className="py-2">
@@ -431,21 +438,6 @@ export function MultiMicDuckFields({ mode = "listen", form, onChange, meters = {
         </p>
       </div>
 
-      <div className="flex flex-wrap gap-2">
-        <ToolBtn onClick={copyAllCommand} accent>
-          <Copy size={12} /> Copy command from row 1
-        </ToolBtn>
-        <ToolBtn onClick={pasteAllCommand} disabled={allClip?.kind !== "command"}>
-          <ClipboardPaste size={12} /> Paste command to all mics
-        </ToolBtn>
-        <ToolBtn onClick={() => copyFullMic(0)}>
-          <Copy size={12} /> Copy full mic 1
-        </ToolBtn>
-        <ToolBtn onClick={pasteFullMicToAll} disabled={allClip?.kind !== "full"}>
-          <ClipboardPaste size={12} /> Paste full mic to all
-        </ToolBtn>
-      </div>
-
       <div className="space-y-3">
         {members.map((member, idx) => {
           const cmd = member.yamaha_command || "InCh/Fader/Smooth";
@@ -461,29 +453,43 @@ export function MultiMicDuckFields({ mode = "listen", form, onChange, meters = {
                 <div className="flex items-center gap-2">
                   <div
                     className="w-8 h-8 rounded-lg flex items-center justify-center"
-                    style={{ background: "rgba(57,229,140,0.12)", color: "#39E58C" }}
+                    style={{ background: "rgba(32,217,255,0.12)", color: "#20D9FF" }}
                   >
                     <Speaker size={14} />
                   </div>
                   <div>
                     <div className="text-sm font-bold" style={{ color: "#E8ECF4" }}>
-                      When Mic {member.monitor_channel} speaks
+                      Mic {member.monitor_channel || "?"} Command
                     </div>
                     <div className="text-[10px]" style={{ color: "#6B7280" }}>
-                      {formatMemberAction(member)}
+                      {YAMAHA_CMD_LABELS[member.yamaha_command] || member.yamaha_command} → {member.parameter_value}
                     </div>
                   </div>
                 </div>
                 <div className="flex gap-1">
-                  <ToolBtn onClick={() => copyRowSettings(idx, commandFields)} title="Copy">
+                  <ToolBtn onClick={() => copyRowSettings(idx, commandFields)} title="Copy this command">
                     <Copy size={11} />
                   </ToolBtn>
-                  <ToolBtn onClick={() => pasteRowSettings(idx, commandFields)} disabled={!rowClip} title="Paste">
+                  <ToolBtn onClick={() => pasteRowSettings(idx, commandFields)} disabled={!rowClip} title="Paste to this mic">
                     <ClipboardPaste size={11} />
                   </ToolBtn>
                   <ToolBtn onClick={() => pasteRowSettingsAll(commandFields)} disabled={!rowClip} title="Paste to all mics">
                     All
                   </ToolBtn>
+                  <div className="w-[1px] h-4 bg-white/10 mx-1 self-center" />
+                  <ToolBtn onClick={() => duplicateMember(idx)} title="Duplicate mic below">
+                    <CopyPlus size={11} />
+                  </ToolBtn>
+                  <button
+                    type="button"
+                    onClick={() => removeMember(idx)}
+                    disabled={members.length <= 1}
+                    className="ml-2 p-1.5 rounded-lg"
+                    style={{ color: "#f87171", opacity: members.length <= 1 ? 0.3 : 1, background: "rgba(248,113,113,0.1)" }}
+                    title="Remove mic"
+                  >
+                    <Trash2 size={12} />
+                  </button>
                 </div>
               </div>
 
@@ -570,16 +576,29 @@ export function MultiMicDuckFields({ mode = "listen", form, onChange, meters = {
                   </div>
                 )}
 
-                <div className={needsChannel && needsMix ? "col-span-2" : ""}>
-                  <label style={labelStyle}>Duck value / level</label>
-                  <input
-                    type="text"
-                    placeholder="-2500"
-                    value={member.parameter_value ?? "-2500"}
-                    onChange={(e) => onChangeMember(idx, "parameter_value", e.target.value)}
-                    style={{ ...inputStyle, fontFamily: "monospace" }}
-                  />
-                </div>
+                {cmd === "ssrecall_ex" ? (
+                  <div className={needsChannel && needsMix ? "col-span-2" : ""}>
+                    <label style={labelStyle} title="Scene Number to recall">Scene Number</label>
+                    <input
+                      type="text"
+                      placeholder="e.g. 1"
+                      value={member.parameter_value ?? "1"}
+                      onChange={(e) => onChangeMember(idx, "parameter_value", e.target.value)}
+                      style={{ ...inputStyle, fontFamily: "monospace" }}
+                    />
+                  </div>
+                ) : (
+                  <div className={needsChannel && needsMix ? "col-span-2" : ""}>
+                    <label style={labelStyle} title="For levels: integer dB. For On/Off: 1 or 0.">Value / Level</label>
+                    <input
+                      type="text"
+                      placeholder="-2500"
+                      value={member.parameter_value ?? "-2500"}
+                      onChange={(e) => onChangeMember(idx, "parameter_value", e.target.value)}
+                      style={{ ...inputStyle, fontFamily: "monospace" }}
+                    />
+                  </div>
+                )}
               </div>
             </div>
           );

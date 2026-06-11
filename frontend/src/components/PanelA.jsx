@@ -46,6 +46,8 @@ import {
   ruleMatchesSearch,
   ruleMatchesFilter,
   RULE_FILTERS,
+  YAMAHA_CMD_LABELS,
+  VMIX_FN_LABELS,
 } from "../constants/ruleConfig";
 import {
   meterLevelToWidth,
@@ -2920,6 +2922,21 @@ const RuleRow = React.memo(function RuleRow({
     actionStates[`${trigger.id}:${member.monitor_channel}`] ||
     null;
 
+  const actionsList = (() => {
+    if (!trigger.is_multi_action) return [];
+    if (Array.isArray(trigger.actions)) return trigger.actions;
+    if (typeof trigger.actions === "string") {
+      try {
+        return JSON.parse(trigger.actions);
+      } catch {
+        return [];
+      }
+    }
+    return [];
+  })();
+  const getActionState = (idx) =>
+    actionStates[`${trigger.id}:action:${idx}`] || null;
+
   return (
     <tr
       ref={setNodeRef}
@@ -3022,6 +3039,38 @@ const RuleRow = React.memo(function RuleRow({
                   }}
                 />
                 {duckMembers.length} mic{duckMembers.length === 1 ? "" : "s"}
+              </button>
+            )}
+            {trigger.is_multi_action && actionsList.length > 0 && (
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onToggleMultiExpand?.();
+                }}
+                title="Expand actions"
+                style={{
+                  marginTop: "4px",
+                  display: "flex",
+                  alignItems: "center",
+                  gap: "4px",
+                  fontSize: "10px",
+                  color: "#20D9FF",
+                  background: "rgba(32,217,255,0.08)",
+                  border: "1px solid rgba(32,217,255,0.2)",
+                  borderRadius: "6px",
+                  padding: "2px 6px",
+                  cursor: "pointer",
+                }}
+              >
+                <ChevronRight
+                  size={12}
+                  style={{
+                    transform: multiExpanded ? "rotate(90deg)" : "rotate(0deg)",
+                    transition: "transform 0.15s",
+                  }}
+                />
+                {actionsList.length} action{actionsList.length === 1 ? "" : "s"}
               </button>
             )}
             <div
@@ -3238,6 +3287,92 @@ const RuleRow = React.memo(function RuleRow({
                   {state?.restored_value != null && (
                     <div style={{ marginTop: "2px", color: "#5A6278", fontSize: "9px", fontFamily: "monospace" }}>
                       restored {String(state.restored_value)}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        )}
+        {trigger.is_multi_action && multiExpanded && actionsList.length > 0 && (
+          <div style={{ marginTop: "8px", display: "flex", flexDirection: "column", gap: "6px" }}>
+            {actionsList.map((act, i) => {
+              const state = getActionState(i);
+              const status = actionStateStyle(state?.status);
+              const isVmix = act.action_target === "vmix";
+              const cmdLabel = isVmix
+                ? (VMIX_FN_LABELS[act.vmix_function] || act.vmix_function || "vMix")
+                : (YAMAHA_CMD_LABELS[act.yamaha_command] || act.yamaha_command || "Yamaha");
+              const detail = isVmix
+                ? `${act.vmix_target_input ? `Input ${act.vmix_target_input} \u2192 ` : ""}${act.parameter_value}`
+                : `Ch ${act.yamaha_channel || "?"}${act.yamaha_mix ? ` Mix ${act.yamaha_mix}` : ""} \u2192 ${act.parameter_value}`;
+              return (
+                <div
+                  key={`action-${i}`}
+                  style={{
+                    padding: "5px 6px",
+                    borderRadius: "6px",
+                    background: "rgba(0,0,0,0.2)",
+                    border: "1px solid rgba(255,255,255,0.05)",
+                    minWidth: 0,
+                  }}
+                >
+                  <div
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "space-between",
+                      gap: "8px",
+                      minWidth: 0,
+                    }}
+                  >
+                    <span
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        gap: "4px",
+                        minWidth: 0,
+                        color: isVmix ? "#20D9FF" : "#39E58C",
+                        fontSize: "10px",
+                        fontWeight: 800,
+                      }}
+                    >
+                      {isVmix ? <MonitorSpeaker size={10} /> : <Speaker size={10} />}
+                      <span style={{ whiteSpace: "nowrap" }}>Action {i + 1}</span>
+                    </span>
+                    <span
+                      style={{
+                        color: status.color,
+                        background: status.bg,
+                        border: `1px solid ${status.color}33`,
+                        borderRadius: "999px",
+                        padding: "1px 6px",
+                        fontSize: "9px",
+                        fontWeight: 900,
+                        textTransform: "uppercase",
+                        whiteSpace: "nowrap",
+                      }}
+                    >
+                      {status.label}
+                    </span>
+                  </div>
+                  <div
+                    title={`${cmdLabel} \u2014 ${detail}`}
+                    style={{
+                      marginTop: "3px",
+                      color: "#8B93A8",
+                      fontSize: "10px",
+                      lineHeight: 1.25,
+                      overflow: "hidden",
+                      textOverflow: "ellipsis",
+                      whiteSpace: "nowrap",
+                    }}
+                  >
+                    {cmdLabel} \u2014 {detail}
+                  </div>
+                  {act.delay_ms > 0 && (
+                    <div style={{ marginTop: "2px", color: "#5A6278", fontSize: "9px", fontFamily: "monospace" }}>
+                      delay +{act.delay_ms}ms
                     </div>
                   )}
                 </div>

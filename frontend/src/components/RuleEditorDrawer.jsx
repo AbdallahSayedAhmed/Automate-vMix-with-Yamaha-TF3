@@ -26,6 +26,7 @@ import {
 } from "../constants/ruleConfig";
 import { ActivationToggle } from "./ActivationToggle";
 import { MultiMicDuckFields } from "./MultiMicDuckFields";
+import { MultiActionFields } from "./MultiActionFields";
 import {
   DEFAULT_DUCK_MEMBER,
   parseMultiFade,
@@ -134,6 +135,8 @@ export function RuleEditorDrawer({
       "time_threshold",
       "is_multi_duck",
       "duck_members",
+      "is_multi_action",
+      "actions",
       "action_target",
       "yamaha_command",
       "yamaha_channel",
@@ -502,13 +505,61 @@ export function RuleEditorDrawer({
               )}
 
               {tab === "command" && (
-                <div>
+                <div className="space-y-4">
+                  {form.listen_source === "vmix" && (
+                    <Field
+                      label="Action Mode"
+                      showHint={showFieldHints}
+                      hint="Switch to multi-action to execute multiple commands from a single event."
+                    >
+                      <div className="flex rounded-lg overflow-hidden w-fit mb-2">
+                        <SegmentBtn
+                          active={!form.is_multi_action}
+                          onClick={() => onChange("is_multi_action", false)}
+                        >
+                          <span className="flex items-center gap-1.5">
+                            <Zap size={12} /> Single Action
+                          </span>
+                        </SegmentBtn>
+                        <SegmentBtn
+                          active={form.is_multi_action}
+                          onClick={() => {
+                            onChange("is_multi_action", true);
+                            if (!form.actions || form.actions.length === 0) {
+                              onChange("actions", [
+                                {
+                                  action_target: form.action_target || "yamaha",
+                                  yamaha_command: form.yamaha_command || "InCh/Fader/Level",
+                                  yamaha_channel: form.yamaha_channel || 1,
+                                  yamaha_mix: form.yamaha_mix || 0,
+                                  vmix_function: form.vmix_function || "SetVolume",
+                                  vmix_target_input: form.vmix_target_input || null,
+                                  parameter_value: form.parameter_value || "0",
+                                  delay_ms: form.delay_ms || 0,
+                                },
+                              ]);
+                            }
+                          }}
+                        >
+                          <span className="flex items-center gap-1.5">
+                            <Zap size={12} /> Multi-Action
+                          </span>
+                        </SegmentBtn>
+                      </div>
+                    </Field>
+                  )}
+
                   {form.listen_source === "yamaha" && form.is_multi_duck ? (
                     <MultiMicDuckFields
                       mode="command"
                       form={form}
                       onChange={onChange}
                       meters={meters}
+                    />
+                  ) : form.listen_source === "vmix" && form.is_multi_action ? (
+                    <MultiActionFields
+                      form={form}
+                      onChange={onChange}
                     />
                   ) : (
                     <>

@@ -14,9 +14,19 @@ class DuckMemberConfig(BaseModel):
     yamaha_command: str = Field("InCh/Fader/Smooth")
     yamaha_channel: int = Field(10)
     yamaha_mix: int = Field(0)
-    vmix_function: Optional[str] = None
     vmix_target_input: Optional[int] = None
     parameter_value: str = Field("-2500")
+
+
+class ActionConfig(BaseModel):
+    action_target: str = Field("yamaha")
+    yamaha_command: str = Field("InCh/Fader/Level")
+    yamaha_channel: int = Field(1)
+    yamaha_mix: int = Field(0)
+    vmix_function: Optional[str] = None
+    vmix_target_input: Optional[int] = None
+    parameter_value: str = Field("0")
+    delay_ms: int = Field(0, ge=0)
 
 
 class TriggerRuleBase(BaseModel):
@@ -37,6 +47,8 @@ class TriggerRuleBase(BaseModel):
     time_threshold: Optional[str] = Field(None, description="Time remaining threshold for vMix video playback (e.g., '00:01:00')")
     is_multi_duck: bool = Field(False, description="Multi-mic duck rule with per-channel actions")
     duck_members: Optional[List[DuckMemberConfig]] = Field(None, description="Per-mic duck configuration")
+    is_multi_action: bool = Field(False, description="Multi-action rule")
+    actions: Optional[List[ActionConfig]] = Field(None, description="List of actions")
     
     action_target: str = Field('yamaha', description="'yamaha' or 'vmix'")
     yamaha_command: str = Field(..., description="Yamaha RCP parameter path (e.g., InCh/Fader/Level)")
@@ -68,6 +80,8 @@ class TriggerRuleUpdate(BaseModel):
     time_threshold: Optional[str] = None
     is_multi_duck: Optional[bool] = None
     duck_members: Optional[List[DuckMemberConfig]] = None
+    is_multi_action: Optional[bool] = None
+    actions: Optional[List[ActionConfig]] = None
     action_target: Optional[str] = None
     yamaha_command: Optional[str] = None
     yamaha_channel: Optional[int] = None
@@ -85,9 +99,9 @@ class TriggerRuleResponse(TriggerRuleBase):
     created_at: datetime
     updated_at: datetime
 
-    @field_validator("duck_members", mode="before")
+    @field_validator("duck_members", "actions", mode="before")
     @classmethod
-    def parse_duck_members(cls, v: Any):
+    def parse_json_lists(cls, v: Any):
         if v is None or v == "":
             return []
         if isinstance(v, str):

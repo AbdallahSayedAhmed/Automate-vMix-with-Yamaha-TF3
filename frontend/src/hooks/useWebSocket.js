@@ -76,7 +76,9 @@ export function useWebSocket() {
 
           case 'ACTION_STATE_UPDATE': {
             const data = { ...msg.data, updated_at: Date.now() };
-            const memberKey = `${data.rule_id}:${data.member_index ?? data.monitor_channel}`;
+            const memberKey = data.action_index != null 
+              ? `${data.rule_id}:action:${data.action_index}`
+              : `${data.rule_id}:${data.member_index ?? data.monitor_channel}`;
             setActionStates((prev) => ({ ...prev, [memberKey]: data }));
             break;
           }

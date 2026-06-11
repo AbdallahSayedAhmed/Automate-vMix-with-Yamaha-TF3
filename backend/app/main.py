@@ -43,6 +43,10 @@ def _migrate_schema(connection):
         connection.execute(text('ALTER TABLE trigger_rules ADD COLUMN is_multi_duck BOOLEAN NOT NULL DEFAULT 0'))
     if 'duck_members' not in columns:
         connection.execute(text('ALTER TABLE trigger_rules ADD COLUMN duck_members TEXT'))
+    if 'is_multi_action' not in columns:
+        connection.execute(text('ALTER TABLE trigger_rules ADD COLUMN is_multi_action BOOLEAN NOT NULL DEFAULT 0'))
+    if 'actions' not in columns:
+        connection.execute(text('ALTER TABLE trigger_rules ADD COLUMN actions TEXT'))
 
 FRONTEND_DIST = APP_ROOT / "frontend" / "dist"
 FRONTEND_INDEX = FRONTEND_DIST / "index.html"

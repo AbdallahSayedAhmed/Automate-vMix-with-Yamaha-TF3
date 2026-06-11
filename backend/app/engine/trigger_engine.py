@@ -579,6 +579,7 @@ class TriggerEngine:
             "threshold": r.threshold, "release_threshold": r.release_threshold, "silence_timeout_ms": r.silence_timeout_ms,
             "time_threshold": r.time_threshold,
             "is_multi_duck": r.is_multi_duck, "duck_members": r.duck_members,
+            "is_multi_action": r.is_multi_action, "actions": r.actions,
             "action_target": r.action_target, "yamaha_command": r.yamaha_command, "yamaha_channel": r.yamaha_channel, "yamaha_mix": r.yamaha_mix,
             "vmix_function": r.vmix_function, "vmix_target_input": r.vmix_target_input,
             "parameter_value": r.parameter_value, "delay_ms": r.delay_ms
@@ -593,11 +594,52 @@ class TriggerEngine:
         await ws_manager.broadcast_action_state(payload)
 
     async def _execute_rule_delayed(self, rule: Dict[str, Any]):
-        if rule['delay_ms'] > 0:
-            await asyncio.sleep(rule['delay_ms'] / 1000.0)
-        asyncio.create_task(self._broadcast_trigger(rule['id']))
-        asyncio.create_task(self._record_fire(rule['id']))
-        await self._execute_action(rule, rule['parameter_value'])
+        if rule.get('is_multi_action'):
+            asyncio.create_task(self._broadcast_trigger(rule['id']))
+            asyncio.create_task(self._record_fire(rule['id']))
+            
+            try:
+                actions = json.loads(rule.get('actions') or "[]")
+            except (TypeError, json.JSONDecodeError):
+                actions = []
+            
+            for index, action in enumerate(actions):
+                # Construct a pseudo-rule to pass to _execute_action
+                action_rule = {
+                    **rule,
+                    "action_target": action.get("action_target", "yamaha"),
+                    "yamaha_command": action.get("yamaha_command", "InCh/Fader/Level"),
+                    "yamaha_channel": action.get("yamaha_channel", 1),
+                    "yamaha_mix": action.get("yamaha_mix", 0),
+                    "vmix_function": action.get("vmix_function"),
+                    "vmix_target_input": action.get("vmix_target_input"),
+                }
+                target_value = str(action.get("parameter_value", "0"))
+                delay = action.get("delay_ms", 0)
+                
+                async def run_action(act_rule, val, d, idx):
+                    if d > 0:
+                        await asyncio.sleep(d / 1000.0)
+                    await self._execute_action(act_rule, val)
+                    await self._broadcast_action_state({
+                        "rule_id": act_rule['id'],
+                        "action_index": idx,
+                        "status": "applied"
+                    })
+                    await asyncio.sleep(2.0)
+                    await self._broadcast_action_state({
+                        "rule_id": act_rule['id'],
+                        "action_index": idx,
+                        "status": "ready"
+                    })
+                
+                asyncio.create_task(run_action(action_rule, target_value, delay, index))
+        else:
+            if rule.get('delay_ms', 0) > 0:
+                await asyncio.sleep(rule['delay_ms'] / 1000.0)
+            asyncio.create_task(self._broadcast_trigger(rule['id']))
+            asyncio.create_task(self._record_fire(rule['id']))
+            await self._execute_action(rule, rule.get('parameter_value', '0'))
 
     async def _record_fire(self, rule_id: int):
         try:

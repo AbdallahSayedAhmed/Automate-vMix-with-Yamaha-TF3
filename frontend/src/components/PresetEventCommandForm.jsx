@@ -1,4 +1,4 @@
-import { Video, Mic, Speaker, MonitorSpeaker, Plus, Minus, Settings } from 'lucide-react';
+import { Video, Mic, Speaker, MonitorSpeaker, Plus, Minus, Settings, Zap } from 'lucide-react';
 import {
   VMIX_EVENT_LABELS, VMIX_EVENT_INFO,
   YAMAHA_CMD_LABELS, YAMAHA_CMD_INFO,
@@ -92,6 +92,39 @@ export function PresetEventCommandForm({ form, onChange }) {
     if (!next[idx]) next[idx] = { ...DEFAULT_DUCK_MEMBER };
     next[idx] = { ...next[idx], [field]: value };
     onChange("duck_members", next);
+  };
+
+  const actions = form.actions || [];
+  const actionCount = Math.max(1, actions.length);
+
+  const updateActionCount = (newCount) => {
+    if (newCount < 1) newCount = 1;
+    if (newCount > 16) newCount = 16;
+    
+    const nextActions = [...actions];
+    while (nextActions.length < newCount) {
+        nextActions.push({
+            action_target: form.action_target || 'yamaha',
+            yamaha_command: form.yamaha_command || 'InCh/Fader/Level',
+            yamaha_channel: 1,
+            yamaha_mix: 0,
+            vmix_function: form.vmix_function || 'SetVolume',
+            vmix_target_input: null,
+            parameter_value: '0',
+            delay_ms: 0,
+        });
+    }
+    while (nextActions.length > newCount) {
+        nextActions.pop();
+    }
+    onChange("actions", nextActions);
+  };
+
+  const updateAction = (idx, field, value) => {
+    const next = [...actions];
+    if (!next[idx]) next[idx] = {};
+    next[idx] = { ...next[idx], [field]: value };
+    onChange("actions", next);
   };
 
   return (
@@ -256,23 +289,111 @@ export function PresetEventCommandForm({ form, onChange }) {
                          </div>
 
                          {(m.action_target || 'yamaha') === 'yamaha' ? (
-                            <div>
-                               <label className="block text-[9px] text-[#5A6278] uppercase font-bold mb-1">Command</label>
-                               <select value={m.yamaha_command || 'InCh/Fader/Smooth'} onChange={e => updateMember(idx, 'yamaha_command', e.target.value)} style={inputStyle}>
-                                  {Object.entries(YAMAHA_CMD_LABELS).map(([v, l]) => (
-                                    <option key={v} value={v} style={{ background: '#151B27' }}>{l}</option>
-                                  ))}
-                               </select>
-                            </div>
+                            <>
+                               <div>
+                                  <label className="block text-[9px] text-[#5A6278] uppercase font-bold mb-1">Command</label>
+                                  <select value={m.yamaha_command || 'InCh/Fader/Smooth'} onChange={e => updateMember(idx, 'yamaha_command', e.target.value)} style={inputStyle}>
+                                     {Object.entries(YAMAHA_CMD_LABELS).map(([v, l]) => (
+                                       <option key={v} value={v} style={{ background: '#151B27' }}>{l}</option>
+                                     ))}
+                                  </select>
+                               </div>
+                               <div>
+                                  <label className="block text-[9px] text-[#5A6278] uppercase font-bold mb-1">Channel / Number</label>
+                                  <input type="number" placeholder="Ch (e.g. 1)" value={m.yamaha_channel || ""} onChange={e => updateMember(idx, 'yamaha_channel', parseInt(e.target.value))} style={inputStyle} />
+                               </div>
+                            </>
                          ) : (
-                            <div>
-                               <label className="block text-[9px] text-[#5A6278] uppercase font-bold mb-1">Function</label>
-                               <select value={m.vmix_function || 'SetVolume'} onChange={e => updateMember(idx, 'vmix_function', e.target.value)} style={inputStyle}>
-                                  {Object.entries(VMIX_FN_LABELS).map(([v, l]) => (
-                                    <option key={v} value={v} style={{ background: '#151B27' }}>{l}</option>
-                                  ))}
-                               </select>
-                            </div>
+                            <>
+                               <div>
+                                  <label className="block text-[9px] text-[#5A6278] uppercase font-bold mb-1">Function</label>
+                                  <select value={m.vmix_function || 'SetVolume'} onChange={e => updateMember(idx, 'vmix_function', e.target.value)} style={inputStyle}>
+                                     {Object.entries(VMIX_FN_LABELS).map(([v, l]) => (
+                                       <option key={v} value={v} style={{ background: '#151B27' }}>{l}</option>
+                                     ))}
+                                  </select>
+                               </div>
+                               <div>
+                                  <label className="block text-[9px] text-[#5A6278] uppercase font-bold mb-1">Input (Optional)</label>
+                                  <input type="number" placeholder="Input (e.g. 1)" value={m.vmix_target_input || ""} onChange={e => updateMember(idx, 'vmix_target_input', parseInt(e.target.value) || null)} style={inputStyle} />
+                               </div>
+                            </>
+                         )}
+                      </div>
+                   </div>
+                 ))}
+              </div>
+           </div>
+        ) : listen === 'vmix' && form.is_multi_action ? (
+           <div className="space-y-4">
+              <Field label="Action Mode">
+                <div className="flex rounded-lg overflow-hidden w-full mb-2">
+                  <Seg active={!form.is_multi_action} onClick={() => onChange('is_multi_action', false)}>
+                    <span className="flex items-center gap-1"><Zap size={11} /> Single</span>
+                  </Seg>
+                  <Seg active={form.is_multi_action} onClick={() => onChange('is_multi_action', true)}>
+                    <span className="flex items-center gap-1"><Zap size={11} /> Multi-Action</span>
+                  </Seg>
+                </div>
+              </Field>
+
+              <div className="grid grid-cols-1 gap-4">
+                 <Field label="Number of Actions" hint="How many actions to trigger">
+                    <div className="flex items-center gap-3 bg-black/30 rounded-lg p-2 border border-white/10 w-fit h-[34px]">
+                       <button type="button" onClick={() => updateActionCount(actionCount - 1)} className="p-1 rounded bg-white/5 hover:bg-white/10 text-white"><Minus size={14}/></button>
+                       <span className="text-sm font-bold w-6 text-center text-[#20D9FF]">{actionCount}</span>
+                       <button type="button" onClick={() => updateActionCount(actionCount + 1)} className="p-1 rounded bg-white/5 hover:bg-white/10 text-white"><Plus size={14}/></button>
+                    </div>
+                 </Field>
+              </div>
+
+              <div className="space-y-2">
+                 <p className="text-[10px] font-bold text-[#8B93A8] uppercase mb-1">Set actions as template</p>
+                 {actions.slice(0, actionCount).map((a, idx) => (
+                   <div key={idx} className="p-3 rounded-xl border border-white/5" style={{ background: "rgba(0,0,0,0.2)" }}>
+                      <p className="text-[11px] font-bold text-[#D8DCE6] mb-2 flex items-center gap-1.5">
+                         <Zap size={12} className="text-[#39E58C]"/> Action {idx+1}
+                      </p>
+                      
+                      <div className="grid grid-cols-2 gap-2">
+                         <div>
+                           <label className="block text-[9px] text-[#5A6278] uppercase font-bold mb-1">Target</label>
+                           <select value={a.action_target || 'yamaha'} onChange={e => updateAction(idx, 'action_target', e.target.value)} style={inputStyle}>
+                              <option value="yamaha">Yamaha</option>
+                              <option value="vmix">vMix</option>
+                           </select>
+                         </div>
+
+                         {(a.action_target || 'yamaha') === 'yamaha' ? (
+                            <>
+                              <div>
+                                 <label className="block text-[9px] text-[#5A6278] uppercase font-bold mb-1">Command</label>
+                                 <select value={a.yamaha_command || 'InCh/Fader/Smooth'} onChange={e => updateAction(idx, 'yamaha_command', e.target.value)} style={inputStyle}>
+                                    {Object.entries(YAMAHA_CMD_LABELS).map(([v, l]) => (
+                                      <option key={v} value={v} style={{ background: '#151B27' }}>{l}</option>
+                                    ))}
+                                 </select>
+                              </div>
+                              <div>
+                                 <label className="block text-[9px] text-[#5A6278] uppercase font-bold mb-1">Channel / Number</label>
+                                 <input type="number" placeholder="Ch (e.g. 1)" value={a.yamaha_channel || ""} onChange={e => updateAction(idx, 'yamaha_channel', parseInt(e.target.value))} style={inputStyle} />
+                              </div>
+                            </>
+                         ) : (
+                            <>
+                              <div>
+                                 <label className="block text-[9px] text-[#5A6278] uppercase font-bold mb-1">Function</label>
+                                 <select value={a.vmix_function || 'SetVolume'} onChange={e => updateAction(idx, 'vmix_function', e.target.value)} style={inputStyle}>
+                                    {Object.entries(VMIX_FN_LABELS).map(([v, l]) => (
+                                      <option key={v} value={v} style={{ background: '#151B27' }}>{l}</option>
+                                    ))}
+                                 </select>
+                              </div>
+                              <div>
+                                 <label className="block text-[9px] text-[#5A6278] uppercase font-bold mb-1">Input (Optional)</label>
+                                 <input type="number" placeholder="Input (e.g. 1)" value={a.vmix_target_input || ""} onChange={e => updateAction(idx, 'vmix_target_input', parseInt(e.target.value) || null)} style={inputStyle} />
+                              </div>
+                            </>
                          )}
                       </div>
                    </div>
@@ -281,6 +402,34 @@ export function PresetEventCommandForm({ form, onChange }) {
            </div>
         ) : (
            <>
+            {listen === 'vmix' && (
+               <Field label="Action Mode">
+                  <div className="flex rounded-lg overflow-hidden w-full mb-2">
+                    <Seg active={!form.is_multi_action} onClick={() => onChange('is_multi_action', false)}>
+                      <span className="flex items-center gap-1"><Zap size={11} /> Single</span>
+                    </Seg>
+                    <Seg active={form.is_multi_action} onClick={() => {
+                      onChange('is_multi_action', true);
+                      if (!form.actions || form.actions.length === 0) {
+                        onChange('actions', [
+                          {
+                            action_target: form.action_target || 'yamaha',
+                            yamaha_command: form.yamaha_command || 'InCh/Fader/Level',
+                            yamaha_channel: form.yamaha_channel || 1,
+                            yamaha_mix: form.yamaha_mix || 0,
+                            vmix_function: form.vmix_function || 'SetVolume',
+                            vmix_target_input: form.vmix_target_input || null,
+                            parameter_value: form.parameter_value || '0',
+                            delay_ms: form.delay_ms || 0,
+                          }
+                        ]);
+                      }
+                    }}>
+                      <span className="flex items-center gap-1"><Zap size={11} /> Multi-Action</span>
+                    </Seg>
+                  </div>
+               </Field>
+            )}
             <Field label="Send To">
               <div className="flex rounded-lg overflow-hidden w-full">
                 <Seg active={target === 'yamaha'} onClick={() => onChange('action_target', 'yamaha')}>
