@@ -123,12 +123,15 @@ function buildRestorePayload(rule) {
 }
 
 function normalizeMultiDuckPayload(payload) {
-  if (!(payload.listen_source === "yamaha" && payload.is_multi_duck)) return payload;
+  if (!(payload.listen_source === "yamaha" && payload.is_multi_duck))
+    return payload;
   const fade = parseMultiFade(payload.parameter_value);
   return {
     ...payload,
     parameter_value: formatMultiFade(fade.attack, fade.release),
-    duck_members: Array.isArray(payload.duck_members) ? payload.duck_members : [],
+    duck_members: Array.isArray(payload.duck_members)
+      ? payload.duck_members
+      : [],
   };
 }
 
@@ -679,7 +682,9 @@ export const PanelA = React.memo(function PanelA({
     bulkCreate,
   } = useTriggers();
   const [vmixInputs, setVmixInputs] = useState([]);
-  const [expandedMultiDuckIds, setExpandedMultiDuckIds] = useState(() => new Set());
+  const [expandedMultiDuckIds, setExpandedMultiDuckIds] = useState(
+    () => new Set(),
+  );
   const [editorOpen, setEditorOpen] = useState(false);
   const [editingId, setEditingId] = useState(null);
   const [editForm, setEditForm] = useState({ ...DEFAULT_RULE_FORM });
@@ -821,7 +826,11 @@ export const PanelA = React.memo(function PanelA({
             }
           })()
         : [];
-    setEditForm({ ...t, duck_members: members, is_multi_duck: !!t.is_multi_duck });
+    setEditForm({
+      ...t,
+      duck_members: members,
+      is_multi_duck: !!t.is_multi_duck,
+    });
     setIsCreating(false);
     setEditorOpen(true);
   };
@@ -1287,8 +1296,9 @@ export const PanelA = React.memo(function PanelA({
   };
 
   const handleCopy = (type, data) => {
-    const copied =
-      Array.isArray(data) ? data.map((item) => snapshotRule(item)) : snapshotRule(data);
+    const copied = Array.isArray(data)
+      ? data.map((item) => snapshotRule(item))
+      : snapshotRule(data);
     const anchor =
       type === "rule"
         ? copied
@@ -2076,7 +2086,7 @@ export const PanelA = React.memo(function PanelA({
       />
 
       <div
-        className="glass-panel"
+        className="glass-panel rules-panel"
         style={{
           borderRadius: "12px",
           overflow: "hidden",
@@ -2087,6 +2097,7 @@ export const PanelA = React.memo(function PanelA({
       >
         {/* ── Header ── */}
         <div
+          className="rules-panel__header"
           style={{
             padding: "12px 20px",
             borderBottom: "1px solid rgba(255,255,255,0.06)",
@@ -2098,7 +2109,10 @@ export const PanelA = React.memo(function PanelA({
             flexShrink: 0,
           }}
         >
-          <div style={{ display: "flex", alignItems: "center", gap: "16px" }}>
+          <div
+            className="rules-panel__titlebar"
+            style={{ display: "flex", alignItems: "center", gap: "16px" }}
+          >
             <div>
               <div
                 style={{
@@ -2119,6 +2133,7 @@ export const PanelA = React.memo(function PanelA({
               </div>
             </div>
             <div
+              className="rules-panel__utility-actions"
               style={{
                 display: "flex",
                 gap: "6px",
@@ -2163,9 +2178,13 @@ export const PanelA = React.memo(function PanelA({
               />
             </div>
           </div>
-          <div style={{ display: "flex", gap: "8px", alignItems: "center" }}>
+          <div
+            className="rules-panel__toolbar"
+            style={{ display: "flex", gap: "8px", alignItems: "center" }}
+          >
             {copiedData && (
               <div
+                className="rules-panel__clipboard-chip"
                 style={{
                   display: "flex",
                   alignItems: "center",
@@ -2287,7 +2306,7 @@ export const PanelA = React.memo(function PanelA({
                 ? "Deselect All"
                 : "Select All"}
             </button>
-            <div style={{ position: "relative" }}>
+            <div className="rules-search" style={{ position: "relative" }}>
               <Search
                 size={14}
                 style={{
@@ -2301,6 +2320,7 @@ export const PanelA = React.memo(function PanelA({
               <input
                 ref={searchInputRef}
                 type="text"
+                className="rules-search__input"
                 placeholder="Search id, name, event, command…"
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
@@ -2318,7 +2338,7 @@ export const PanelA = React.memo(function PanelA({
             <button
               onClick={handleCreateNew}
               disabled={editorOpen}
-              className="hover-lift"
+              className="rules-primary-action hover-lift"
               style={{
                 padding: "8px 16px",
                 borderRadius: "8px",
@@ -2344,6 +2364,7 @@ export const PanelA = React.memo(function PanelA({
 
         {copiedData && (
           <div
+            className="rules-clipboard-banner"
             style={{
               padding: "6px 20px",
               fontSize: "12px",
@@ -2398,6 +2419,7 @@ export const PanelA = React.memo(function PanelA({
         )}
 
         <div
+          className="rules-filter-bar"
           style={{
             padding: "8px 20px",
             borderBottom: "1px solid rgba(255,255,255,0.06)",
@@ -2454,13 +2476,17 @@ export const PanelA = React.memo(function PanelA({
         </div>
 
         {/* ── Table ── */}
-        <div style={{ flex: 1, overflow: "auto" }}>
+        <div
+          className="rules-table-scroll"
+          style={{ flex: 1, overflow: "auto" }}
+        >
           <DndContext
             sensors={sensors}
             collisionDetection={closestCenter}
             onDragEnd={handleDragEnd}
           >
             <table
+              className="rules-table"
               style={{
                 width: "100%",
                 borderCollapse: "collapse",
@@ -2469,13 +2495,13 @@ export const PanelA = React.memo(function PanelA({
             >
               <colgroup>
                 <col style={{ width: "36px" }} />
-                <col style={{ width: "min(220px, 22%)" }} />
-                <col style={{ width: "28%" }} />
-                <col style={{ width: "28%" }} />
-                <col style={{ width: "52px" }} />
-                <col style={{ width: "64px" }} />
-                <col style={{ width: "88px" }} />
-                <col style={{ width: "48px" }} />
+                <col style={{ width: "260px" }} />
+                <col style={{ width: "300px" }} />
+                <col style={{ width: "300px" }} />
+                <col style={{ width: "56px" }} />
+                <col style={{ width: "92px" }} />
+                <col style={{ width: "140px" }} />
+                <col style={{ width: "72px" }} />
               </colgroup>
               <thead
                 style={{
@@ -2681,7 +2707,7 @@ export const PanelA = React.memo(function PanelA({
                           expandedMultiDuckIds={expandedMultiDuckIds}
                           toggleMultiDuckExpand={toggleMultiDuckExpand}
                         />
-                    );
+                      );
                     }
                     return (
                       <SortableRuleWrapper
@@ -2826,13 +2852,25 @@ function actionStateKey(ruleId, member, idx) {
 function actionStateStyle(status) {
   switch (status) {
     case "applying":
-      return { label: "Applying", color: "#20D9FF", bg: "rgba(32,217,255,0.1)" };
+      return {
+        label: "Applying",
+        color: "#20D9FF",
+        bg: "rgba(32,217,255,0.1)",
+      };
     case "applied":
       return { label: "Applied", color: "#39E58C", bg: "rgba(57,229,140,0.1)" };
     case "restoring":
-      return { label: "Restoring", color: "#F6B44B", bg: "rgba(246,180,75,0.1)" };
+      return {
+        label: "Restoring",
+        color: "#F6B44B",
+        bg: "rgba(246,180,75,0.1)",
+      };
     case "restored":
-      return { label: "Restored", color: "#8B93A8", bg: "rgba(139,147,168,0.1)" };
+      return {
+        label: "Restored",
+        color: "#8B93A8",
+        bg: "rgba(139,147,168,0.1)",
+      };
     case "held":
       return { label: "Held", color: "#F6B44B", bg: "rgba(246,180,75,0.1)" };
     case "error":
@@ -2941,7 +2979,7 @@ const RuleRow = React.memo(function RuleRow({
     <tr
       ref={setNodeRef}
       style={{ ...rowStyle, ...style }}
-      className="group"
+      className="group rule-row"
       onMouseEnter={(e) => {
         if (!flash)
           e.currentTarget.style.background = isGrouped
@@ -3124,7 +3162,14 @@ const RuleRow = React.memo(function RuleRow({
           {listen.secondary}
         </div>
         {trigger.is_multi_duck && multiExpanded && duckMembers.length > 0 && (
-          <div style={{ marginTop: "8px", display: "flex", flexDirection: "column", gap: "6px" }}>
+          <div
+            style={{
+              marginTop: "8px",
+              display: "flex",
+              flexDirection: "column",
+              gap: "6px",
+            }}
+          >
             {duckMembers.map((m, i) => {
               const lvl = meters[m.monitor_channel];
               return (
@@ -3137,10 +3182,20 @@ const RuleRow = React.memo(function RuleRow({
                     border: "1px solid rgba(255,255,255,0.05)",
                   }}
                 >
-                  <div style={{ display: "flex", justifyContent: "space-between", fontSize: "10px", color: "#39E58C", fontWeight: 700 }}>
+                  <div
+                    style={{
+                      display: "flex",
+                      justifyContent: "space-between",
+                      fontSize: "10px",
+                      color: "#39E58C",
+                      fontWeight: 700,
+                    }}
+                  >
                     <span>Mic Ch {m.monitor_channel}</span>
                     <span style={{ color: "#6B7280", fontWeight: 500 }}>
-                      {lvl != null ? `${(lvl / 100).toFixed(1)} dB` : "No signal"}
+                      {lvl != null
+                        ? `${(lvl / 100).toFixed(1)} dB`
+                        : "No signal"}
                     </span>
                   </div>
                   <div
@@ -3181,7 +3236,10 @@ const RuleRow = React.memo(function RuleRow({
               style={{
                 height: "100%",
                 width: `${meterLevelToWidth(meterVal)}%`,
-                background: meterLevelToColor(meterVal, trigger.threshold ?? -4000),
+                background: meterLevelToColor(
+                  meterVal,
+                  trigger.threshold ?? -4000,
+                ),
                 transition: "width 0.1s linear",
               }}
             />
@@ -3215,7 +3273,14 @@ const RuleRow = React.memo(function RuleRow({
           {command.secondary}
         </div>
         {trigger.is_multi_duck && multiExpanded && duckMembers.length > 0 && (
-          <div style={{ marginTop: "8px", display: "flex", flexDirection: "column", gap: "6px" }}>
+          <div
+            style={{
+              marginTop: "8px",
+              display: "flex",
+              flexDirection: "column",
+              gap: "6px",
+            }}
+          >
             {duckMembers.map((m, i) => {
               const state = getMemberActionState(m, i);
               const status = actionStateStyle(state?.status);
@@ -3251,8 +3316,14 @@ const RuleRow = React.memo(function RuleRow({
                         fontWeight: 800,
                       }}
                     >
-                      {isVmix ? <MonitorSpeaker size={10} /> : <Speaker size={10} />}
-                      <span style={{ whiteSpace: "nowrap" }}>Mic Ch {m.monitor_channel}</span>
+                      {isVmix ? (
+                        <MonitorSpeaker size={10} />
+                      ) : (
+                        <Speaker size={10} />
+                      )}
+                      <span style={{ whiteSpace: "nowrap" }}>
+                        Mic Ch {m.monitor_channel}
+                      </span>
                     </span>
                     <span
                       style={{
@@ -3285,7 +3356,14 @@ const RuleRow = React.memo(function RuleRow({
                     {formatMemberAction(m)}
                   </div>
                   {state?.restored_value != null && (
-                    <div style={{ marginTop: "2px", color: "#5A6278", fontSize: "9px", fontFamily: "monospace" }}>
+                    <div
+                      style={{
+                        marginTop: "2px",
+                        color: "#5A6278",
+                        fontSize: "9px",
+                        fontFamily: "monospace",
+                      }}
+                    >
                       restored {String(state.restored_value)}
                     </div>
                   )}
@@ -3295,14 +3373,25 @@ const RuleRow = React.memo(function RuleRow({
           </div>
         )}
         {trigger.is_multi_action && multiExpanded && actionsList.length > 0 && (
-          <div style={{ marginTop: "8px", display: "flex", flexDirection: "column", gap: "6px" }}>
+          <div
+            style={{
+              marginTop: "8px",
+              display: "flex",
+              flexDirection: "column",
+              gap: "6px",
+            }}
+          >
             {actionsList.map((act, i) => {
               const state = getActionState(i);
               const status = actionStateStyle(state?.status);
               const isVmix = act.action_target === "vmix";
               const cmdLabel = isVmix
-                ? (VMIX_FN_LABELS[act.vmix_function] || act.vmix_function || "vMix")
-                : (YAMAHA_CMD_LABELS[act.yamaha_command] || act.yamaha_command || "Yamaha");
+                ? VMIX_FN_LABELS[act.vmix_function] ||
+                  act.vmix_function ||
+                  "vMix"
+                : YAMAHA_CMD_LABELS[act.yamaha_command] ||
+                  act.yamaha_command ||
+                  "Yamaha";
               const detail = isVmix
                 ? `${act.vmix_target_input ? `Input ${act.vmix_target_input} \u2192 ` : ""}${act.parameter_value}`
                 : `Ch ${act.yamaha_channel || "?"}${act.yamaha_mix ? ` Mix ${act.yamaha_mix}` : ""} \u2192 ${act.parameter_value}`;
@@ -3337,8 +3426,14 @@ const RuleRow = React.memo(function RuleRow({
                         fontWeight: 800,
                       }}
                     >
-                      {isVmix ? <MonitorSpeaker size={10} /> : <Speaker size={10} />}
-                      <span style={{ whiteSpace: "nowrap" }}>Action {i + 1}</span>
+                      {isVmix ? (
+                        <MonitorSpeaker size={10} />
+                      ) : (
+                        <Speaker size={10} />
+                      )}
+                      <span style={{ whiteSpace: "nowrap" }}>
+                        Action {i + 1}
+                      </span>
                     </span>
                     <span
                       style={{
@@ -3371,7 +3466,14 @@ const RuleRow = React.memo(function RuleRow({
                     {cmdLabel} \u2014 {detail}
                   </div>
                   {act.delay_ms > 0 && (
-                    <div style={{ marginTop: "2px", color: "#5A6278", fontSize: "9px", fontFamily: "monospace" }}>
+                    <div
+                      style={{
+                        marginTop: "2px",
+                        color: "#5A6278",
+                        fontSize: "9px",
+                        fontFamily: "monospace",
+                      }}
+                    >
                       delay +{act.delay_ms}ms
                     </div>
                   )}

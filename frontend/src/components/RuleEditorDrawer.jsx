@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from "react";
+import { createPortal } from "react-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   X,
@@ -160,12 +161,12 @@ export function RuleEditorDrawer({
     { id: "presets", label: "Presets", color: "#F6B44B" },
   ];
 
-  return (
+  return createPortal(
     <AnimatePresence>
       {isOpen && (
         <>
           <motion.div
-            className="fixed inset-0 z-[150]"
+            className="rule-editor-backdrop fixed inset-0"
             style={{ background: "rgba(7,10,15,0.6)" }}
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
@@ -173,9 +174,11 @@ export function RuleEditorDrawer({
             onClick={onClose}
           />
           <motion.aside
-            className="fixed top-0 right-0 bottom-0 z-[160] flex flex-col glass-sheet"
+            className="rule-editor-drawer fixed top-0 right-0 bottom-0 flex flex-col glass-sheet"
             style={{
-              width: form.is_multi_duck ? "min(720px, 100vw)" : "min(520px, 100vw)",
+              width: form.is_multi_duck
+                ? "min(720px, 100vw)"
+                : "min(520px, 100vw)",
               borderRadius: "16px 0 0 16px",
             }}
             initial={{ x: "100%" }}
@@ -184,7 +187,7 @@ export function RuleEditorDrawer({
             transition={{ type: "spring", stiffness: 380, damping: 36 }}
           >
             <div
-              className="px-5 py-4 flex items-start justify-between gap-3 shrink-0"
+              className="rule-editor-header px-5 py-4 flex items-start justify-between gap-3 shrink-0"
               style={{ borderBottom: "1px solid rgba(255,255,255,0.06)" }}
             >
               <div className="flex-1 min-w-0">
@@ -387,7 +390,11 @@ export function RuleEditorDrawer({
                     </>
                   ) : (
                     <>
-                      <Field label="Duck Mode" showHint={showFieldHints} hint="Single channel: one mic, one command. Multi-mic: many mics in one rule, each with its own command.">
+                      <Field
+                        label="Duck Mode"
+                        showHint={showFieldHints}
+                        hint="Single channel: one mic, one command. Multi-mic: many mics in one rule, each with its own command."
+                      >
                         <div className="flex rounded-lg overflow-hidden w-fit">
                           <SegmentBtn
                             active={!form.is_multi_duck}
@@ -402,13 +409,18 @@ export function RuleEditorDrawer({
                             onClick={() => {
                               onChange("is_multi_duck", true);
                               if (!form.duck_members?.length) {
-                                onChange("duck_members", [{ ...DEFAULT_DUCK_MEMBER }]);
+                                onChange("duck_members", [
+                                  { ...DEFAULT_DUCK_MEMBER },
+                                ]);
                               }
                               if (!form.silence_timeout_ms) {
                                 onChange("silence_timeout_ms", 3000);
                               }
                               const fade = parseMultiFade(form.parameter_value);
-                              onChange("parameter_value", formatMultiFade(fade.attack, fade.release));
+                              onChange(
+                                "parameter_value",
+                                formatMultiFade(fade.attack, fade.release),
+                              );
                             }}
                           >
                             Multi-Mic Duck
@@ -425,78 +437,81 @@ export function RuleEditorDrawer({
                         />
                       ) : (
                         <>
-                      <Field
-                        label="Channel to Monitor (1–40)"
-                        hint="Yamaha input channel to monitor live meter data."
-                        showHint={showFieldHints}
-                      >
-                        <input
-                          type="number"
-                          min="1"
-                          max="40"
-                          value={form.vmix_input_number || ""}
-                          onChange={(e) =>
-                            onChange(
-                              "vmix_input_number",
-                              parseInt(e.target.value) || null,
-                            )
-                          }
-                          style={inputStyle}
-                        />
-                      </Field>
-                      <div className="grid grid-cols-3 gap-2">
-                        <Field
-                          label="Attack (Thr)"
-                          hint="Signal must exceed this level. Typical: -4000."
-                          showHint={showFieldHints}
-                        >
-                          <input
-                            type="number"
-                            placeholder="-4000"
-                            value={form.threshold ?? ""}
-                            onChange={(e) =>
-                              onChange("threshold", parseInt(e.target.value))
-                            }
-                            style={inputStyle}
-                          />
-                        </Field>
-                        <Field
-                          label="Release (Rel)"
-                          hint="Signal must drop below this to start silence timer. Typical: -5000."
-                          showHint={showFieldHints}
-                        >
-                          <input
-                            type="number"
-                            placeholder="-5000"
-                            value={form.release_threshold ?? ""}
-                            onChange={(e) =>
-                              onChange(
-                                "release_threshold",
-                                parseInt(e.target.value),
-                              )
-                            }
-                            style={inputStyle}
-                          />
-                        </Field>
-                        <Field
-                          label="Silence (ms)"
-                          hint="How long after silence before restoring. e.g. 3000."
-                          showHint={showFieldHints}
-                        >
-                          <input
-                            type="number"
-                            placeholder="3000"
-                            value={form.silence_timeout_ms ?? ""}
-                            onChange={(e) =>
-                              onChange(
-                                "silence_timeout_ms",
-                                parseInt(e.target.value),
-                              )
-                            }
-                            style={inputStyle}
-                          />
-                        </Field>
-                      </div>
+                          <Field
+                            label="Channel to Monitor (1–40)"
+                            hint="Yamaha input channel to monitor live meter data."
+                            showHint={showFieldHints}
+                          >
+                            <input
+                              type="number"
+                              min="1"
+                              max="40"
+                              value={form.vmix_input_number || ""}
+                              onChange={(e) =>
+                                onChange(
+                                  "vmix_input_number",
+                                  parseInt(e.target.value) || null,
+                                )
+                              }
+                              style={inputStyle}
+                            />
+                          </Field>
+                          <div className="grid grid-cols-3 gap-2">
+                            <Field
+                              label="Attack (Thr)"
+                              hint="Signal must exceed this level. Typical: -4000."
+                              showHint={showFieldHints}
+                            >
+                              <input
+                                type="number"
+                                placeholder="-4000"
+                                value={form.threshold ?? ""}
+                                onChange={(e) =>
+                                  onChange(
+                                    "threshold",
+                                    parseInt(e.target.value),
+                                  )
+                                }
+                                style={inputStyle}
+                              />
+                            </Field>
+                            <Field
+                              label="Release (Rel)"
+                              hint="Signal must drop below this to start silence timer. Typical: -5000."
+                              showHint={showFieldHints}
+                            >
+                              <input
+                                type="number"
+                                placeholder="-5000"
+                                value={form.release_threshold ?? ""}
+                                onChange={(e) =>
+                                  onChange(
+                                    "release_threshold",
+                                    parseInt(e.target.value),
+                                  )
+                                }
+                                style={inputStyle}
+                              />
+                            </Field>
+                            <Field
+                              label="Silence (ms)"
+                              hint="How long after silence before restoring. e.g. 3000."
+                              showHint={showFieldHints}
+                            >
+                              <input
+                                type="number"
+                                placeholder="3000"
+                                value={form.silence_timeout_ms ?? ""}
+                                onChange={(e) =>
+                                  onChange(
+                                    "silence_timeout_ms",
+                                    parseInt(e.target.value),
+                                  )
+                                }
+                                style={inputStyle}
+                              />
+                            </Field>
+                          </div>
                         </>
                       )}
                     </>
@@ -529,11 +544,14 @@ export function RuleEditorDrawer({
                               onChange("actions", [
                                 {
                                   action_target: form.action_target || "yamaha",
-                                  yamaha_command: form.yamaha_command || "InCh/Fader/Level",
+                                  yamaha_command:
+                                    form.yamaha_command || "InCh/Fader/Level",
                                   yamaha_channel: form.yamaha_channel || 1,
                                   yamaha_mix: form.yamaha_mix || 0,
-                                  vmix_function: form.vmix_function || "SetVolume",
-                                  vmix_target_input: form.vmix_target_input || null,
+                                  vmix_function:
+                                    form.vmix_function || "SetVolume",
+                                  vmix_target_input:
+                                    form.vmix_target_input || null,
                                   parameter_value: form.parameter_value || "0",
                                   delay_ms: form.delay_ms || 0,
                                 },
@@ -557,243 +575,247 @@ export function RuleEditorDrawer({
                       meters={meters}
                     />
                   ) : form.listen_source === "vmix" && form.is_multi_action ? (
-                    <MultiActionFields
-                      form={form}
-                      onChange={onChange}
-                    />
+                    <MultiActionFields form={form} onChange={onChange} />
                   ) : (
                     <>
-                  <Field
-                    label="Command Target"
-                    showHint={showFieldHints}
-                    hint="Send the action to Yamaha TF3 mixer or back to vMix."
-                  >
-                    <div className="flex rounded-lg overflow-hidden w-fit">
-                      <SegmentBtn
-                        active={form.action_target === "yamaha"}
-                        onClick={() => onChange("action_target", "yamaha")}
+                      <Field
+                        label="Command Target"
+                        showHint={showFieldHints}
+                        hint="Send the action to Yamaha TF3 mixer or back to vMix."
                       >
-                        <span className="flex items-center gap-1.5">
-                          <Speaker size={12} /> Yamaha
-                        </span>
-                      </SegmentBtn>
-                      <SegmentBtn
-                        active={form.action_target === "vmix"}
-                        onClick={() => onChange("action_target", "vmix")}
-                      >
-                        <span className="flex items-center gap-1.5">
-                          <MonitorSpeaker size={12} /> vMix
-                        </span>
-                      </SegmentBtn>
-                    </div>
-                  </Field>
+                        <div className="flex rounded-lg overflow-hidden w-fit">
+                          <SegmentBtn
+                            active={form.action_target === "yamaha"}
+                            onClick={() => onChange("action_target", "yamaha")}
+                          >
+                            <span className="flex items-center gap-1.5">
+                              <Speaker size={12} /> Yamaha
+                            </span>
+                          </SegmentBtn>
+                          <SegmentBtn
+                            active={form.action_target === "vmix"}
+                            onClick={() => onChange("action_target", "vmix")}
+                          >
+                            <span className="flex items-center gap-1.5">
+                              <MonitorSpeaker size={12} /> vMix
+                            </span>
+                          </SegmentBtn>
+                        </div>
+                      </Field>
 
-                  {form.action_target === "yamaha" ? (
-                    <>
-                      <Field
-                        label="Yamaha Command"
-                        hint={YAMAHA_CMD_INFO[cmd]}
-                        showHint={showFieldHints}
-                      >
-                        <select
-                          value={cmd}
-                          onChange={(e) => {
-                            const value = e.target.value;
-                            onChange("yamaha_command", value);
-                            if (value === "ssrecall_ex")
-                              onChange("yamaha_channel", 0);
-                          }}
-                          style={inputStyle}
-                        >
-                          {Object.entries(YAMAHA_CMD_LABELS).map(([v, l]) => (
-                            <option
-                              key={v}
-                              value={v}
-                              style={{ background: "#151B27" }}
+                      {form.action_target === "yamaha" ? (
+                        <>
+                          <Field
+                            label="Yamaha Command"
+                            hint={YAMAHA_CMD_INFO[cmd]}
+                            showHint={showFieldHints}
+                          >
+                            <select
+                              value={cmd}
+                              onChange={(e) => {
+                                const value = e.target.value;
+                                onChange("yamaha_command", value);
+                                if (value === "ssrecall_ex")
+                                  onChange("yamaha_channel", 0);
+                              }}
+                              style={inputStyle}
                             >
-                              {l}
-                            </option>
-                          ))}
-                        </select>
-                      </Field>
-                      <div className="grid grid-cols-2 gap-2">
-                        {needsChannel && (
-                          <Field
-                            label="Channel (Ch)"
-                            hint="Channel or target number (input 1–40, DCA 1–8, scene number)."
-                            showHint={showFieldHints}
-                          >
-                            <input
-                              type="number"
-                              value={form.yamaha_channel ?? ""}
-                              onChange={(e) =>
-                                onChange(
-                                  "yamaha_channel",
-                                  parseInt(e.target.value) || 0,
-                                )
-                              }
-                              style={inputStyle}
-                            />
+                              {Object.entries(YAMAHA_CMD_LABELS).map(
+                                ([v, l]) => (
+                                  <option
+                                    key={v}
+                                    value={v}
+                                    style={{ background: "#151B27" }}
+                                  >
+                                    {l}
+                                  </option>
+                                ),
+                              )}
+                            </select>
                           </Field>
-                        )}
-                        {needsMix && (
-                          <Field
-                            label="Mix (Mx)"
-                            hint="Aux/Mix bus number 1–20."
-                            showHint={showFieldHints}
-                          >
-                            <input
-                              type="number"
-                              value={form.yamaha_mix ?? ""}
-                              onChange={(e) =>
-                                onChange(
-                                  "yamaha_mix",
-                                  parseInt(e.target.value) || 0,
-                                )
-                              }
-                              style={inputStyle}
-                            />
-                          </Field>
-                        )}
-                      </div>
-                      {isSmooth ? (
-                        (() => {
-                          const sp = (form.parameter_value || "").split(",");
-                          const endLevel = sp.length >= 3 ? sp[1] : sp[0];
-                          const duration = sp.length >= 3 ? sp[2] : sp[1];
-                          const updateSmooth = (newEnd, newDur) =>
-                            onChange(
-                              "parameter_value",
-                              `${newEnd || ""},${newDur || ""}`,
-                            );
-                          return (
-                            <div className="grid grid-cols-2 gap-2">
+                          <div className="grid grid-cols-2 gap-2">
+                            {needsChannel && (
                               <Field
-                                label="End Level"
-                                hint="e.g. -2000 (-20dB). Level to fade TO."
+                                label="Channel (Ch)"
+                                hint="Channel or target number (input 1–40, DCA 1–8, scene number)."
                                 showHint={showFieldHints}
                               >
                                 <input
-                                  type="text"
-                                  placeholder="-2000"
-                                  value={endLevel || ""}
+                                  type="number"
+                                  value={form.yamaha_channel ?? ""}
                                   onChange={(e) =>
-                                    updateSmooth(e.target.value, duration)
+                                    onChange(
+                                      "yamaha_channel",
+                                      parseInt(e.target.value) || 0,
+                                    )
                                   }
-                                  style={{
-                                    ...inputStyle,
-                                    fontFamily: "monospace",
-                                  }}
+                                  style={inputStyle}
                                 />
                               </Field>
+                            )}
+                            {needsMix && (
                               <Field
-                                label="Duration (ms)"
-                                hint="e.g. 2000 (2 seconds)."
+                                label="Mix (Mx)"
+                                hint="Aux/Mix bus number 1–20."
                                 showHint={showFieldHints}
                               >
                                 <input
-                                  type="text"
-                                  placeholder="2000"
-                                  value={duration || ""}
+                                  type="number"
+                                  value={form.yamaha_mix ?? ""}
                                   onChange={(e) =>
-                                    updateSmooth(endLevel, e.target.value)
+                                    onChange(
+                                      "yamaha_mix",
+                                      parseInt(e.target.value) || 0,
+                                    )
                                   }
-                                  style={{
-                                    ...inputStyle,
-                                    fontFamily: "monospace",
-                                  }}
+                                  style={inputStyle}
                                 />
                               </Field>
-                            </div>
-                          );
-                        })()
+                            )}
+                          </div>
+                          {isSmooth ? (
+                            (() => {
+                              const sp = (form.parameter_value || "").split(
+                                ",",
+                              );
+                              const endLevel = sp.length >= 3 ? sp[1] : sp[0];
+                              const duration = sp.length >= 3 ? sp[2] : sp[1];
+                              const updateSmooth = (newEnd, newDur) =>
+                                onChange(
+                                  "parameter_value",
+                                  `${newEnd || ""},${newDur || ""}`,
+                                );
+                              return (
+                                <div className="grid grid-cols-2 gap-2">
+                                  <Field
+                                    label="End Level"
+                                    hint="e.g. -2000 (-20dB). Level to fade TO."
+                                    showHint={showFieldHints}
+                                  >
+                                    <input
+                                      type="text"
+                                      placeholder="-2000"
+                                      value={endLevel || ""}
+                                      onChange={(e) =>
+                                        updateSmooth(e.target.value, duration)
+                                      }
+                                      style={{
+                                        ...inputStyle,
+                                        fontFamily: "monospace",
+                                      }}
+                                    />
+                                  </Field>
+                                  <Field
+                                    label="Duration (ms)"
+                                    hint="e.g. 2000 (2 seconds)."
+                                    showHint={showFieldHints}
+                                  >
+                                    <input
+                                      type="text"
+                                      placeholder="2000"
+                                      value={duration || ""}
+                                      onChange={(e) =>
+                                        updateSmooth(endLevel, e.target.value)
+                                      }
+                                      style={{
+                                        ...inputStyle,
+                                        fontFamily: "monospace",
+                                      }}
+                                    />
+                                  </Field>
+                                </div>
+                              );
+                            })()
+                          ) : (
+                            <Field
+                              label={
+                                cmd === "ssrecall_ex" ? "Scene Number" : "Value"
+                              }
+                              hint={
+                                cmd === "ssrecall_ex"
+                                  ? "Enter the saved scene number to recall. The Yamaha channel field is ignored for this command."
+                                  : "For levels: integer dB units (0 = Unity). For On/Off: 1 or 0."
+                              }
+                              showHint={showFieldHints}
+                            >
+                              <input
+                                type="text"
+                                placeholder={
+                                  cmd === "ssrecall_ex"
+                                    ? "e.g. 1"
+                                    : "e.g. -1000 or 1"
+                                }
+                                value={form.parameter_value ?? ""}
+                                onChange={(e) =>
+                                  onChange("parameter_value", e.target.value)
+                                }
+                                style={{
+                                  ...inputStyle,
+                                  fontFamily: "monospace",
+                                }}
+                              />
+                            </Field>
+                          )}
+                        </>
                       ) : (
-                        <Field
-                          label={
-                            cmd === "ssrecall_ex" ? "Scene Number" : "Value"
-                          }
-                          hint={
-                            cmd === "ssrecall_ex"
-                              ? "Enter the saved scene number to recall. The Yamaha channel field is ignored for this command."
-                              : "For levels: integer dB units (0 = Unity). For On/Off: 1 or 0."
-                          }
-                          showHint={showFieldHints}
-                        >
-                          <input
-                            type="text"
-                            placeholder={
-                              cmd === "ssrecall_ex"
-                                ? "e.g. 1"
-                                : "e.g. -1000 or 1"
-                            }
-                            value={form.parameter_value ?? ""}
-                            onChange={(e) =>
-                              onChange("parameter_value", e.target.value)
-                            }
-                            style={{ ...inputStyle, fontFamily: "monospace" }}
-                          />
-                        </Field>
-                      )}
-                    </>
-                  ) : (
-                    <>
-                      <Field
-                        label="vMix Function"
-                        hint={VMIX_FN_INFO[form.vmix_function]}
-                        showHint={showFieldHints}
-                      >
-                        <select
-                          value={form.vmix_function || ""}
-                          onChange={(e) =>
-                            onChange("vmix_function", e.target.value)
-                          }
-                          style={inputStyle}
-                        >
-                          {Object.entries(VMIX_FN_LABELS).map(([v, l]) => (
-                            <option
-                              key={v}
-                              value={v}
-                              style={{ background: "#151B27" }}
+                        <>
+                          <Field
+                            label="vMix Function"
+                            hint={VMIX_FN_INFO[form.vmix_function]}
+                            showHint={showFieldHints}
+                          >
+                            <select
+                              value={form.vmix_function || ""}
+                              onChange={(e) =>
+                                onChange("vmix_function", e.target.value)
+                              }
+                              style={inputStyle}
                             >
-                              {l}
-                            </option>
-                          ))}
-                        </select>
-                      </Field>
-                      <div className="grid grid-cols-2 gap-2">
-                        <Field
-                          label="Target Input"
-                          hint="Input number for SetVolume and similar functions."
-                          showHint={showFieldHints}
-                        >
-                          <input
-                            type="text"
-                            placeholder="e.g. 1"
-                            value={form.vmix_target_input || ""}
-                            onChange={(e) =>
-                              onChange("vmix_target_input", e.target.value)
-                            }
-                            style={inputStyle}
-                          />
-                        </Field>
-                        <Field
-                          label="Value"
-                          hint="Value to pass (0–100 for volume)."
-                          showHint={showFieldHints}
-                        >
-                          <input
-                            type="text"
-                            placeholder="e.g. 100"
-                            value={form.parameter_value || ""}
-                            onChange={(e) =>
-                              onChange("parameter_value", e.target.value)
-                            }
-                            style={inputStyle}
-                          />
-                        </Field>
-                      </div>
-                    </>
-                  )}
+                              {Object.entries(VMIX_FN_LABELS).map(([v, l]) => (
+                                <option
+                                  key={v}
+                                  value={v}
+                                  style={{ background: "#151B27" }}
+                                >
+                                  {l}
+                                </option>
+                              ))}
+                            </select>
+                          </Field>
+                          <div className="grid grid-cols-2 gap-2">
+                            <Field
+                              label="Target Input"
+                              hint="Input number for SetVolume and similar functions."
+                              showHint={showFieldHints}
+                            >
+                              <input
+                                type="text"
+                                placeholder="e.g. 1"
+                                value={form.vmix_target_input || ""}
+                                onChange={(e) =>
+                                  onChange("vmix_target_input", e.target.value)
+                                }
+                                style={inputStyle}
+                              />
+                            </Field>
+                            <Field
+                              label="Value"
+                              hint="Value to pass (0–100 for volume)."
+                              showHint={showFieldHints}
+                            >
+                              <input
+                                type="text"
+                                placeholder="e.g. 100"
+                                value={form.parameter_value || ""}
+                                onChange={(e) =>
+                                  onChange("parameter_value", e.target.value)
+                                }
+                                style={inputStyle}
+                              />
+                            </Field>
+                          </div>
+                        </>
+                      )}
                     </>
                   )}
                 </div>
@@ -994,7 +1016,8 @@ export function RuleEditorDrawer({
           </motion.aside>
         </>
       )}
-    </AnimatePresence>
+    </AnimatePresence>,
+    document.body,
   );
 }
 
