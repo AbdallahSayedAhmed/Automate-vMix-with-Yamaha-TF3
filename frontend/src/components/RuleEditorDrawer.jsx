@@ -521,7 +521,9 @@ export function RuleEditorDrawer({
 
               {tab === "command" && (
                 <div className="space-y-4">
-                  {form.listen_source === "vmix" && (
+                  {(form.listen_source === "vmix" ||
+                    (form.listen_source === "yamaha" &&
+                      !form.is_multi_duck)) && (
                     <Field
                       label="Action Mode"
                       showHint={showFieldHints}
@@ -574,7 +576,7 @@ export function RuleEditorDrawer({
                       onChange={onChange}
                       meters={meters}
                     />
-                  ) : form.listen_source === "vmix" && form.is_multi_action ? (
+                  ) : form.is_multi_action && !form.is_multi_duck ? (
                     <MultiActionFields form={form} onChange={onChange} />
                   ) : (
                     <>

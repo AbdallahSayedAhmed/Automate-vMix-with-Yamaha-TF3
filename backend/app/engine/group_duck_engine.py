@@ -42,10 +42,9 @@ def _parse_rule_fade(param_val: str) -> tuple[int, int]:
 
 
 def _uses_smooth_fade(rule: Dict[str, Any]) -> bool:
-    return (
-        rule.get("action_target") == "yamaha"
-        and str(rule.get("yamaha_command", "")).endswith("/Smooth")
-    )
+    return rule.get("action_target") == "yamaha" and str(
+        rule.get("yamaha_command", "")
+    ).endswith("/Smooth")
 
 
 def _duck_action_value(rule: Dict[str, Any]) -> str:
@@ -69,10 +68,15 @@ def member_to_action_dict(
     rule_id: int,
     fade_attack_ms: int = DEFAULT_FADE_MS,
     fade_release_ms: int = DEFAULT_FADE_MS,
+    action_index: int = 0,
+    action: Dict[str, Any] | None = None,
 ) -> Dict[str, Any]:
-    duck_level = str(member.get("parameter_value", "-2500")).split(",")[0]
-    action_target = member.get("action_target", "yamaha")
-    yamaha_command = member.get("yamaha_command", "InCh/Fader/Smooth")
+    source = action or member
+    duck_level = str(source.get("parameter_value", "-2500")).split(",")[0]
+    action_target = source.get("action_target", member.get("action_target", "yamaha"))
+    yamaha_command = source.get(
+        "yamaha_command", member.get("yamaha_command", "InCh/Fader/Smooth")
+    )
     action_value = (
         f"{duck_level},{fade_attack_ms}"
         if action_target == "yamaha" and str(yamaha_command).endswith("/Smooth")
@@ -85,17 +89,57 @@ def member_to_action_dict(
         "sort_order": 0,
         "action_target": action_target,
         "yamaha_command": yamaha_command,
-        "yamaha_channel": member.get("yamaha_channel", 10),
-        "yamaha_mix": member.get("yamaha_mix", 0),
-        "vmix_function": member.get("vmix_function"),
-        "vmix_target_input": member.get("vmix_target_input"),
+        "yamaha_channel": source.get(
+            "yamaha_channel", member.get("yamaha_channel", 10)
+        ),
+        "yamaha_mix": source.get("yamaha_mix", member.get("yamaha_mix", 0)),
+        "vmix_function": source.get("vmix_function", member.get("vmix_function")),
+        "vmix_target_input": source.get(
+            "vmix_target_input", member.get("vmix_target_input")
+        ),
         "parameter_value": action_value,
+        "delay_ms": source.get("delay_ms", 0),
         "_duck_level": duck_level,
         "_attack_ms": fade_attack_ms,
         "_release_ms": fade_release_ms,
         "_member_id": member_id,
+        "_member_action_id": member_id * 100 + action_index,
+        "_action_index": action_index,
         "_group_id": rule_id,
     }
+
+
+def member_to_action_dicts(
+    member: Dict[str, Any],
+    member_id: int,
+    rule_id: int,
+    fade_attack_ms: int = DEFAULT_FADE_MS,
+    fade_release_ms: int = DEFAULT_FADE_MS,
+) -> List[Dict[str, Any]]:
+    actions = member.get("actions")
+    if isinstance(actions, list) and actions:
+        return [
+            member_to_action_dict(
+                member,
+                member_id,
+                rule_id,
+                fade_attack_ms,
+                fade_release_ms,
+                action_index=idx,
+                action=action,
+            )
+            for idx, action in enumerate(actions)
+            if isinstance(action, dict)
+        ] or [
+            member_to_action_dict(
+                member, member_id, rule_id, fade_attack_ms, fade_release_ms
+            )
+        ]
+    return [
+        member_to_action_dict(
+            member, member_id, rule_id, fade_attack_ms, fade_release_ms
+        )
+    ]
 
 
 def make_target_key(rule: Dict[str, Any]) -> str:
@@ -144,7 +188,9 @@ class GroupDuckEngine:
             try:
                 members_raw = json.loads(rule.duck_members or "[]")
             except json.JSONDecodeError:
-                logger.warning(f"[GROUP DUCK] Invalid duck_members JSON on rule {rule.id}")
+                logger.warning(
+                    f"[GROUP DUCK] Invalid duck_members JSON on rule {rule.id}"
+                )
                 continue
 
             fade_attack, fade_release = _parse_rule_fade(rule.parameter_value)
@@ -161,6 +207,9 @@ class GroupDuckEngine:
                 if not m.get("monitor_channel"):
                     continue
                 mid = rule.id * 1000 + idx
+                actions = member_to_action_dicts(
+                    m, mid, rule.id, fade_attack, fade_release
+                )
                 mdict = {
                     "id": mid,
                     "member_index": idx,
@@ -168,15 +217,16 @@ class GroupDuckEngine:
                     "monitor_channel": int(m["monitor_channel"]),
                     "threshold": m.get("threshold", -4000),
                     "release_threshold": m.get("release_threshold", -5000),
-                    "action": member_to_action_dict(
-                        m, mid, rule.id, fade_attack, fade_release
-                    ),
+                    "action": actions[0],
+                    "actions": actions,
                 }
                 ch = mdict["monitor_channel"]
                 self._channel_index.setdefault(ch, []).append((gdict, mdict))
 
         self._cache_ts = time.time()
-        logger.info(f"[MULTI-DUCK] Loaded channels: {sorted(self._channel_index.keys())}")
+        logger.info(
+            f"[MULTI-DUCK] Loaded channels: {sorted(self._channel_index.keys())}"
+        )
 
     async def _ensure_cache(self):
         if self._cache_ts > 0 and (time.time() - self._cache_ts) < self._cache_ttl:
@@ -232,7 +282,7 @@ class GroupDuckEngine:
         member_id = mdict["id"]
         group_id = gdict["id"]
         rt = self._get_member_rt(member_id, group_id)
-        action_rule = mdict["action"]
+        action_rules = mdict.get("actions") or [mdict["action"]]
 
         threshold = mdict["threshold"]
         release_threshold = mdict["release_threshold"]
@@ -243,30 +293,34 @@ class GroupDuckEngine:
             rt["last_speech_time"] = now
             if not was_speaking:
                 rt["speaking"] = True
-                await self._member_start_speaking(gdict, mdict, action_rule, engine)
+                for action_rule in action_rules:
+                    await self._member_start_speaking(gdict, mdict, action_rule, engine)
             else:
-                await self._cancel_target_restore(action_rule)
+                for action_rule in action_rules:
+                    await self._cancel_target_restore(action_rule)
         elif level >= release_threshold:
             rt["last_speech_time"] = now
         elif was_speaking:
             elapsed_ms = (now - rt["last_speech_time"]) * 1000.0
             if elapsed_ms >= silence_ms:
                 rt["speaking"] = False
-                await self._member_stop_speaking(gdict, mdict, action_rule, engine)
+                for action_rule in action_rules:
+                    await self._member_stop_speaking(gdict, mdict, action_rule, engine)
 
     async def _member_start_speaking(
         self, gdict: Dict, mdict: Dict, action_rule: Dict, engine
     ) -> None:
         member_id = mdict["id"]
+        contributor_id = action_rule.get("_member_action_id", member_id)
         target_key = make_target_key(action_rule)
         target = self._get_target_rt(target_key)
         was_restoring = await self._cancel_target_restore(action_rule)
 
-        if member_id in target["contributors"]:
+        if contributor_id in target["contributors"]:
             return
 
-        target["contributors"].add(member_id)
-        target["members"][member_id] = mdict
+        target["contributors"].add(contributor_id)
+        target["members"][contributor_id] = mdict
         target["rule"] = action_rule
 
         if target["status"] == "idle" or was_restoring:
@@ -300,12 +354,13 @@ class GroupDuckEngine:
         self, gdict: Dict, mdict: Dict, action_rule: Dict, engine
     ) -> None:
         member_id = mdict["id"]
+        contributor_id = action_rule.get("_member_action_id", member_id)
         target_key = make_target_key(action_rule)
         target = self._target_rt.get(target_key)
         if not target:
             return
 
-        target["contributors"].discard(member_id)
+        target["contributors"].discard(contributor_id)
         if target["contributors"]:
             await self._broadcast_member_state(
                 engine, gdict, mdict, action_rule, "held", target_key=target_key
@@ -369,6 +424,10 @@ class GroupDuckEngine:
                         )
                     else:
                         target["saved_value"] = saved
+
+                delay_ms = rule.get("delay_ms", 0) or 0
+                if delay_ms > 0:
+                    await asyncio.sleep(delay_ms / 1000.0)
 
                 duck_val = _duck_action_value(rule)
                 await engine._apply_meter_action(
@@ -500,6 +559,7 @@ class GroupDuckEngine:
                 "yamaha_mix": rule.get("yamaha_mix"),
                 "vmix_function": rule.get("vmix_function"),
                 "vmix_target_input": rule.get("vmix_target_input"),
+                "action_index": rule.get("_action_index"),
                 "value": value,
                 "saved_value": saved_value,
                 "restored_value": restored_value,

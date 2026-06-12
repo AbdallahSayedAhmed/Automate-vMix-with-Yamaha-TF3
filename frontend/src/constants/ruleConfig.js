@@ -268,7 +268,9 @@ export function formatListenDetail(rule, vmixInputs = []) {
         badge: "MULTI DUCK",
         badgeColor: "#39E58C",
         primary: `${members.length || 0} mic channel${members.length === 1 ? "" : "s"}`,
-        secondary: chs.length ? `Ch ${chs.join(", ")} · Silence ${sil}ms` : `Silence ${sil}ms`,
+        secondary: chs.length
+          ? `Ch ${chs.join(", ")} · Silence ${sil}ms`
+          : `Silence ${sil}ms`,
         tertiary: "Expand row to see each mic meter and action",
       };
     }
@@ -304,7 +306,8 @@ export function formatCommandDetail(rule) {
     const members = Array.isArray(rule.duck_members) ? rule.duck_members : [];
     const fadeParts = String(rule.parameter_value || "700,700").split(",");
     const attackRaw = parseInt(fadeParts[0], 10);
-    const attack = Number.isFinite(attackRaw) && attackRaw >= 0 ? attackRaw : 700;
+    const attack =
+      Number.isFinite(attackRaw) && attackRaw >= 0 ? attackRaw : 700;
     const releaseRaw = parseInt(fadeParts[1], 10);
     const release =
       Number.isFinite(releaseRaw) && releaseRaw >= 0 ? releaseRaw : attack;
@@ -316,14 +319,15 @@ export function formatCommandDetail(rule) {
       tertiary: "Set actions in Command tab",
     };
   }
-  if (rule.is_multi_action && rule.listen_source === 'vmix') {
+  if (rule.is_multi_action && !rule.is_multi_duck) {
     const acts = Array.isArray(rule.actions) ? rule.actions : [];
+    const color = rule.listen_source === "yamaha" ? "#F6B44B" : "#20D9FF";
     return {
-      badge: 'MULTI-ACTION',
-      badgeColor: '#20D9FF',
-      primary: `${acts.length} action${acts.length === 1 ? '' : 's'}`,
-      secondary: 'Expand row to see each action',
-      tertiary: 'Set actions in Command tab',
+      badge: "MULTI-ACTION",
+      badgeColor: color,
+      primary: `${acts.length} action${acts.length === 1 ? "" : "s"}`,
+      secondary: "Expand row to see each action",
+      tertiary: "Set actions in Command tab",
     };
   }
   if (rule.action_target === "vmix") {

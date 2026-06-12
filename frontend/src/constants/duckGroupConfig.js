@@ -5,7 +5,24 @@ import {
   yamahaCmdNeedsChannel,
 } from "./ruleConfig";
 
-export { YAMAHA_CMD_LABELS, VMIX_FN_LABELS, yamahaCmdNeedsMix, yamahaCmdNeedsChannel };
+export {
+  YAMAHA_CMD_LABELS,
+  VMIX_FN_LABELS,
+  yamahaCmdNeedsMix,
+  yamahaCmdNeedsChannel,
+};
+
+export const DEFAULT_DUCK_ACTION = {
+  action_target: "yamaha",
+  yamaha_command: "InCh/Fader/Smooth",
+  yamaha_channel: 10,
+  yamaha_mix: 0,
+  vmix_function: null,
+  vmix_target_input: null,
+  parameter_value: "-2500",
+  delay_ms: 0,
+  sort_order: 0,
+};
 
 export const DEFAULT_DUCK_MEMBER = {
   monitor_channel: 1,
@@ -18,25 +35,19 @@ export const DEFAULT_DUCK_MEMBER = {
   vmix_function: null,
   vmix_target_input: null,
   parameter_value: "-2500",
+  actions: [{ ...DEFAULT_DUCK_ACTION }],
 };
 
-export const LISTEN_COPY_FIELDS = ["monitor_channel", "threshold", "release_threshold"];
+export const LISTEN_COPY_FIELDS = [
+  "monitor_channel",
+  "threshold",
+  "release_threshold",
+];
 
 export const LISTEN_FIELD_LABELS = {
   monitor_channel: "Mic Channel",
   threshold: "Attack (dB×100)",
   release_threshold: "Release (dB×100)",
-};
-
-export const DEFAULT_DUCK_ACTION = {
-  action_target: "yamaha",
-  yamaha_command: "InCh/Fader/Smooth",
-  yamaha_channel: 10,
-  yamaha_mix: 0,
-  vmix_function: null,
-  vmix_target_input: null,
-  parameter_value: "-2500",
-  sort_order: 0,
 };
 
 export const MEMBER_COPY_FIELDS = [
@@ -105,11 +116,26 @@ export function meterLevelToColor(level, threshold = -4000) {
 }
 
 export function formatMemberAction(m) {
-  if (m.action_target === "vmix") {
-    return `${m.vmix_function || "SetVolume"} → ${m.parameter_value}`;
+  const actions =
+    Array.isArray(m.actions) && m.actions.length ? m.actions : [m];
+  if (actions.length > 1) {
+    return `${actions.length} actions → ${actions
+      .map((a) =>
+        a.action_target === "vmix"
+          ? a.vmix_function || "vMix"
+          : a.yamaha_command?.split("/").pop() || "Yamaha",
+      )
+      .join(", ")}`;
   }
-  const parts = [m.yamaha_command?.split("/").pop() || "Level", `Ch${m.yamaha_channel}`];
-  if (m.yamaha_mix) parts.push(`Mx${m.yamaha_mix}`);
-  parts.push(m.parameter_value);
+  const action = actions[0] || m;
+  if (action.action_target === "vmix") {
+    return `${action.vmix_function || "SetVolume"} → ${action.parameter_value}`;
+  }
+  const parts = [
+    action.yamaha_command?.split("/").pop() || "Level",
+    `Ch${action.yamaha_channel}`,
+  ];
+  if (action.yamaha_mix) parts.push(`Mx${action.yamaha_mix}`);
+  parts.push(action.parameter_value);
   return parts.join(" · ");
 }
