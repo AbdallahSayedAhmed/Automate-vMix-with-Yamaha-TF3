@@ -1,4 +1,11 @@
-import React, { useState, useEffect, useRef, useMemo } from "react";
+import React, {
+  lazy,
+  Suspense,
+  useState,
+  useEffect,
+  useRef,
+  useMemo,
+} from "react";
 import { motion } from "framer-motion";
 import {
   Plus,
@@ -28,11 +35,9 @@ import {
   Zap,
   Undo2,
 } from "lucide-react";
-import { QuickPresetsPanel } from "./QuickPresetsPanel";
 import { useUndoHistory } from "../hooks/useUndoHistory";
 import { ActivationToggle } from "./ActivationToggle";
 import { FloatingActionBar } from "./FloatingActionBar";
-import { RuleEditorDrawer, DEFAULT_RULE_FORM } from "./RuleEditorDrawer";
 import { GroupModal } from "./GroupModal";
 import { useTriggers } from "../hooks/useTriggers";
 import {
@@ -48,6 +53,7 @@ import {
   RULE_FILTERS,
   YAMAHA_CMD_LABELS,
   VMIX_FN_LABELS,
+  DEFAULT_RULE_FORM,
 } from "../constants/ruleConfig";
 import {
   meterLevelToWidth,
@@ -56,7 +62,6 @@ import {
   parseMultiFade,
   formatMultiFade,
 } from "../constants/duckGroupConfig";
-import { ShortcutsPanel } from "./ShortcutsPanel";
 import { toast } from "sonner";
 import { api } from "../services/api";
 import {
@@ -73,6 +78,22 @@ import {
   useSortable,
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
+
+const QuickPresetsPanel = lazy(() =>
+  import("./QuickPresetsPanel").then((module) => ({
+    default: module.QuickPresetsPanel,
+  })),
+);
+const RuleEditorDrawer = lazy(() =>
+  import("./RuleEditorDrawer").then((module) => ({
+    default: module.RuleEditorDrawer,
+  })),
+);
+const ShortcutsPanel = lazy(() =>
+  import("./ShortcutsPanel").then((module) => ({
+    default: module.ShortcutsPanel,
+  })),
+);
 
 // ─── Tiny helpers ─────────────────────────────────────────────────────────────
 function nextCopyName(base, existingNames) {
@@ -1994,84 +2015,92 @@ export const PanelA = React.memo(function PanelA({
         </div>
       )}
 
-      <ShortcutsPanel
-        isOpen={shortcutsOpen}
-        onClose={() => setShortcutsOpen(false)}
-        shortcuts={prefs.shortcuts}
-        onUpdate={prefs.updateShortcut}
-        onReset={prefs.resetShortcuts}
-        showFieldHints={prefs.showFieldHints}
-        onToggleHints={prefs.setShowFieldHints}
-      />
+      <Suspense fallback={null}>
+        {shortcutsOpen && (
+          <ShortcutsPanel
+            isOpen={shortcutsOpen}
+            onClose={() => setShortcutsOpen(false)}
+            shortcuts={prefs.shortcuts}
+            onUpdate={prefs.updateShortcut}
+            onReset={prefs.resetShortcuts}
+            showFieldHints={prefs.showFieldHints}
+            onToggleHints={prefs.setShowFieldHints}
+          />
+        )}
 
-      <QuickPresetsPanel
-        isOpen={presetsOpen}
-        onClose={() => setPresetsOpen(false)}
-        presets={prefs.presets}
-        onAdd={(label, form) => {
-          const id = prefs.addPreset(label, form);
-          undoHistory.push({
-            label: `Add preset "${label}"`,
-            undo: async () => prefs.removePreset(id),
-          });
-          toast.success(`Preset "${label}" added`);
-        }}
-        onUpdate={(id, updates) => {
-          const before = prefs.presets.find((p) => p.id === id);
-          if (!before) return;
-          prefs.updatePreset(id, updates);
-          undoHistory.push({
-            label: `Edit preset "${updates.label || before.label}"`,
-            undo: async () =>
-              prefs.updatePreset(id, {
-                label: before.label,
-                form: before.form,
-              }),
-          });
-          toast.success("Preset updated");
-        }}
-        onRemove={(id) => {
-          const before = prefs.presets.find((p) => p.id === id);
-          if (!before) return;
-          prefs.removePreset(id);
-          undoHistory.push({
-            label: `Remove preset "${before.label}"`,
-            undo: async () => prefs.addPreset(before.label, before.form),
-          });
-          toast.success("Preset removed");
-        }}
-      />
+        {presetsOpen && (
+          <QuickPresetsPanel
+            isOpen={presetsOpen}
+            onClose={() => setPresetsOpen(false)}
+            presets={prefs.presets}
+            onAdd={(label, form) => {
+              const id = prefs.addPreset(label, form);
+              undoHistory.push({
+                label: `Add preset "${label}"`,
+                undo: async () => prefs.removePreset(id),
+              });
+              toast.success(`Preset "${label}" added`);
+            }}
+            onUpdate={(id, updates) => {
+              const before = prefs.presets.find((p) => p.id === id);
+              if (!before) return;
+              prefs.updatePreset(id, updates);
+              undoHistory.push({
+                label: `Edit preset "${updates.label || before.label}"`,
+                undo: async () =>
+                  prefs.updatePreset(id, {
+                    label: before.label,
+                    form: before.form,
+                  }),
+              });
+              toast.success("Preset updated");
+            }}
+            onRemove={(id) => {
+              const before = prefs.presets.find((p) => p.id === id);
+              if (!before) return;
+              prefs.removePreset(id);
+              undoHistory.push({
+                label: `Remove preset "${before.label}"`,
+                undo: async () => prefs.addPreset(before.label, before.form),
+              });
+              toast.success("Preset removed");
+            }}
+          />
+        )}
 
-      <RuleEditorDrawer
-        isOpen={editorOpen}
-        isNew={isCreating}
-        form={editForm}
-        onChange={handleChange}
-        onSave={handleSave}
-        onClose={closeEditor}
-        vmixInputs={vmixInputs}
-        copiedData={copiedData}
-        saving={saving}
-        showFieldHints={prefs.showFieldHints}
-        meters={meters}
-        presets={prefs.presets}
-        onSavePreset={(label, form) => {
-          const id = prefs.saveCurrentAsPreset(label, form || editForm);
-          undoHistory.push({
-            label: `Save preset "${label}"`,
-            undo: async () => prefs.removePreset(id),
-          });
-          toast.success(`Preset "${label}" saved`);
-        }}
-        onUpdatePreset={(id, updates) => {
-          prefs.updatePreset(id, updates);
-          toast.success("Preset updated");
-        }}
-        onRemovePreset={(id) => {
-          prefs.removePreset(id);
-          toast.success("Preset removed");
-        }}
-      />
+        {editorOpen && (
+          <RuleEditorDrawer
+            isOpen={editorOpen}
+            isNew={isCreating}
+            form={editForm}
+            onChange={handleChange}
+            onSave={handleSave}
+            onClose={closeEditor}
+            vmixInputs={vmixInputs}
+            copiedData={copiedData}
+            saving={saving}
+            showFieldHints={prefs.showFieldHints}
+            meters={meters}
+            presets={prefs.presets}
+            onSavePreset={(label, form) => {
+              const id = prefs.saveCurrentAsPreset(label, form || editForm);
+              undoHistory.push({
+                label: `Save preset "${label}"`,
+                undo: async () => prefs.removePreset(id),
+              });
+              toast.success(`Preset "${label}" saved`);
+            }}
+            onUpdatePreset={(id, updates) => {
+              prefs.updatePreset(id, updates);
+              toast.success("Preset updated");
+            }}
+            onRemovePreset={(id) => {
+              prefs.removePreset(id);
+              toast.success("Preset removed");
+            }}
+          />
+        )}
+      </Suspense>
 
       <GroupModal
         isOpen={showGroupModal}
