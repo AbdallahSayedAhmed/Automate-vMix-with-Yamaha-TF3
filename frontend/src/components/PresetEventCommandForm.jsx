@@ -240,123 +240,69 @@ export function PresetEventCommandForm({ form, onChange }) {
           </>
         ) : (
           <>
-            <Field label="Duck Mode">
-              <div className="flex rounded-lg overflow-hidden w-full mb-2">
-                <Seg
-                  active={!form.is_multi_duck}
-                  onClick={() => onChange("is_multi_duck", false)}
-                >
-                  Single Channel
-                </Seg>
-                <Seg
-                  active={!!form.is_multi_duck}
-                  onClick={() => {
-                    onChange("is_multi_duck", true);
-                    if (!form.duck_members?.length) {
-                      onChange("duck_members", [
-                        { ...DEFAULT_DUCK_MEMBER },
-                        { ...DEFAULT_DUCK_MEMBER, monitor_channel: 2 },
-                      ]);
+            <div className="space-y-4 mt-2">
+              <div className="grid grid-cols-2 gap-4">
+                <Field label="Silence (ms)" hint="e.g. 3000">
+                  <input
+                    type="number"
+                    value={form.silence_timeout_ms || 3000}
+                    onChange={(e) =>
+                      onChange("silence_timeout_ms", parseInt(e.target.value))
                     }
-                    if (!form.silence_timeout_ms) {
-                      onChange("silence_timeout_ms", 3000);
-                    }
-                    const fade = parseMultiFade(form.parameter_value);
-                    onChange(
-                      "parameter_value",
-                      formatMultiFade(fade.attack, fade.release),
-                    );
-                  }}
-                >
-                  Multi-Mic Duck
-                </Seg>
-              </div>
-            </Field>
-
-            {form.is_multi_duck ? (
-              <div className="space-y-4 mt-2">
-                <div className="grid grid-cols-2 gap-4">
-                  <Field label="Silence (ms)" hint="e.g. 3000">
-                    <input
-                      type="number"
-                      value={form.silence_timeout_ms || 3000}
-                      onChange={(e) =>
-                        onChange("silence_timeout_ms", parseInt(e.target.value))
-                      }
-                      style={inputStyle}
-                    />
-                  </Field>
-                  <Field label="Number of Mics" hint="How many to listen to">
-                    <div className="flex items-center gap-3 bg-black/30 rounded-lg p-2 border border-white/10 w-fit h-[34px]">
-                      <button
-                        type="button"
-                        onClick={() => updateMicCount(micCount - 1)}
-                        className="p-1 rounded bg-white/5 hover:bg-white/10 text-white"
-                      >
-                        <Minus size={14} />
-                      </button>
-                      <span className="text-sm font-bold w-6 text-center text-[#20D9FF]">
-                        {micCount}
-                      </span>
-                      <button
-                        type="button"
-                        onClick={() => updateMicCount(micCount + 1)}
-                        className="p-1 rounded bg-white/5 hover:bg-white/10 text-white"
-                      >
-                        <Plus size={14} />
-                      </button>
-                    </div>
-                  </Field>
-                </div>
-
-                <div className="p-3 rounded-lg bg-black/20 border border-white/5">
-                  <p className="text-[10px] font-bold text-[#8B93A8] uppercase mb-2">
-                    Assign Mic Channels
-                  </p>
-                  <div className="grid grid-cols-4 gap-2">
-                    {members.slice(0, micCount).map((m, idx) => (
-                      <div key={idx}>
-                        <label className="block text-[9px] text-[#5A6278] uppercase font-bold mb-1">
-                          Mic {idx + 1}
-                        </label>
-                        <input
-                          type="number"
-                          value={m.monitor_channel || ""}
-                          onChange={(e) =>
-                            updateMember(
-                              idx,
-                              "monitor_channel",
-                              parseInt(e.target.value),
-                            )
-                          }
-                          style={inputStyle}
-                          placeholder={`Ch ${idx + 1}`}
-                        />
-                      </div>
-                    ))}
+                    style={inputStyle}
+                  />
+                </Field>
+                <Field label="Number of Mics" hint="How many to listen to">
+                  <div className="flex items-center gap-3 bg-black/30 rounded-lg p-2 border border-white/10 w-fit h-[34px]">
+                    <button
+                      type="button"
+                      onClick={() => updateMicCount(micCount - 1)}
+                      className="p-1 rounded bg-white/5 hover:bg-white/10 text-white"
+                    >
+                      <Minus size={14} />
+                    </button>
+                    <span className="text-sm font-bold w-6 text-center text-[#20D9FF]">
+                      {micCount}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => updateMicCount(micCount + 1)}
+                      className="p-1 rounded bg-white/5 hover:bg-white/10 text-white"
+                    >
+                      <Plus size={14} />
+                    </button>
                   </div>
+                </Field>
+              </div>
+
+              <div className="p-3 rounded-lg bg-black/20 border border-white/5">
+                <p className="text-[10px] font-bold text-[#8B93A8] uppercase mb-2">
+                  Assign Mic Channels
+                </p>
+                <div className="grid grid-cols-4 gap-2">
+                  {members.slice(0, micCount).map((m, idx) => (
+                    <div key={idx}>
+                      <label className="block text-[9px] text-[#5A6278] uppercase font-bold mb-1">
+                        Mic {idx + 1}
+                      </label>
+                      <input
+                        type="number"
+                        value={m.monitor_channel || ""}
+                        onChange={(e) =>
+                          updateMember(
+                            idx,
+                            "monitor_channel",
+                            parseInt(e.target.value),
+                          )
+                        }
+                        style={inputStyle}
+                        placeholder={`Ch ${idx + 1}`}
+                      />
+                    </div>
+                  ))}
                 </div>
               </div>
-            ) : (
-              <Field
-                label="Channel to Monitor (1–40)"
-                hint="Yamaha input channel to monitor live meter data."
-              >
-                <input
-                  type="number"
-                  min="1"
-                  max="40"
-                  value={form.vmix_input_number || ""}
-                  onChange={(e) =>
-                    onChange(
-                      "vmix_input_number",
-                      parseInt(e.target.value) || null,
-                    )
-                  }
-                  style={inputStyle}
-                />
-              </Field>
-            )}
+            </div>
           </>
         )}
       </div>
@@ -542,29 +488,8 @@ export function PresetEventCommandForm({ form, onChange }) {
               ))}
             </div>
           </div>
-        ) : listen === "vmix" && form.is_multi_action ? (
+        ) : (
           <div className="space-y-4">
-            <Field label="Action Mode">
-              <div className="flex rounded-lg overflow-hidden w-full mb-2">
-                <Seg
-                  active={!form.is_multi_action}
-                  onClick={() => onChange("is_multi_action", false)}
-                >
-                  <span className="flex items-center gap-1">
-                    <Zap size={11} /> Single
-                  </span>
-                </Seg>
-                <Seg
-                  active={form.is_multi_action}
-                  onClick={() => onChange("is_multi_action", true)}
-                >
-                  <span className="flex items-center gap-1">
-                    <Zap size={11} /> Multi-Action
-                  </span>
-                </Seg>
-              </div>
-            </Field>
-
             <div className="grid grid-cols-1 gap-4">
               <Field
                 label="Number of Actions"
@@ -720,293 +645,6 @@ export function PresetEventCommandForm({ form, onChange }) {
               ))}
             </div>
           </div>
-        ) : (
-          <>
-            {(listen === "vmix" ||
-              (listen === "yamaha" && !form.is_multi_duck)) && (
-              <Field label="Action Mode">
-                <div className="flex rounded-lg overflow-hidden w-full mb-2">
-                  <Seg
-                    active={!form.is_multi_action}
-                    onClick={() => {
-                      onChange("is_multi_action", false);
-                      onChange("actions", []);
-                    }}
-                  >
-                    <span className="flex items-center gap-1">
-                      <Zap size={11} /> Single
-                    </span>
-                  </Seg>
-                  <Seg
-                    active={!!form.is_multi_action}
-                    onClick={() => {
-                      onChange("is_multi_action", true);
-                      if (!form.actions || form.actions.length === 0) {
-                        onChange("actions", [
-                          {
-                            action_target: form.action_target || "yamaha",
-                            yamaha_command:
-                              form.yamaha_command || "InCh/Fader/Level",
-                            yamaha_channel: form.yamaha_channel || 1,
-                            yamaha_mix: form.yamaha_mix || 0,
-                            vmix_function: form.vmix_function || "SetVolume",
-                            vmix_target_input: form.vmix_target_input || null,
-                            parameter_value: form.parameter_value || "0",
-                            delay_ms: form.delay_ms || 0,
-                          },
-                        ]);
-                      }
-                    }}
-                  >
-                    <span className="flex items-center gap-1">
-                      <Zap size={11} /> Multi-Action
-                    </span>
-                  </Seg>
-                </div>
-              </Field>
-            )}
-
-            {form.is_multi_action && !form.is_multi_duck ? (
-              <div className="space-y-2">
-                <p className="text-[10px] font-bold text-[#8B93A8] uppercase mb-1">
-                  Actions (template)
-                </p>
-                <Field
-                  label="Number of Actions"
-                  hint="How many actions to trigger"
-                >
-                  <div className="flex items-center gap-3 bg-black/30 rounded-lg p-2 border border-white/10 w-fit h-[34px]">
-                    <button
-                      type="button"
-                      onClick={() => updateActionCount(actionCount - 1)}
-                      className="p-1 rounded bg-white/5 hover:bg-white/10 text-white"
-                    >
-                      <Minus size={14} />
-                    </button>
-                    <span className="text-sm font-bold w-6 text-center text-[#20D9FF]">
-                      {actionCount}
-                    </span>
-                    <button
-                      type="button"
-                      onClick={() => updateActionCount(actionCount + 1)}
-                      className="p-1 rounded bg-white/5 hover:bg-white/10 text-white"
-                    >
-                      <Plus size={14} />
-                    </button>
-                  </div>
-                </Field>
-                {actions.slice(0, actionCount).map((a, idx) => (
-                  <div
-                    key={idx}
-                    className="p-3 rounded-xl border border-white/5"
-                    style={{ background: "rgba(0,0,0,0.2)" }}
-                  >
-                    <p className="text-[11px] font-bold text-[#D8DCE6] mb-2 flex items-center gap-1.5">
-                      <Zap size={12} className="text-[#39E58C]" /> Action{" "}
-                      {idx + 1}
-                    </p>
-                    <div className="grid grid-cols-2 gap-2">
-                      <div>
-                        <label className="block text-[9px] text-[#5A6278] uppercase font-bold mb-1">
-                          Target
-                        </label>
-                        <select
-                          value={a.action_target || "yamaha"}
-                          onChange={(e) =>
-                            updateAction(idx, "action_target", e.target.value)
-                          }
-                          style={inputStyle}
-                        >
-                          <option value="yamaha">Yamaha</option>
-                          <option value="vmix">vMix</option>
-                        </select>
-                      </div>
-                      {(a.action_target || "yamaha") === "yamaha" ? (
-                        <>
-                          <div>
-                            <label className="block text-[9px] text-[#5A6278] uppercase font-bold mb-1">
-                              Command
-                            </label>
-                            <select
-                              value={a.yamaha_command || "InCh/Fader/Level"}
-                              onChange={(e) =>
-                                updateAction(
-                                  idx,
-                                  "yamaha_command",
-                                  e.target.value,
-                                )
-                              }
-                              style={inputStyle}
-                            >
-                              {Object.entries(YAMAHA_CMD_LABELS).map(
-                                ([v, l]) => (
-                                  <option
-                                    key={v}
-                                    value={v}
-                                    style={{ background: "#151B27" }}
-                                  >
-                                    {l}
-                                  </option>
-                                ),
-                              )}
-                            </select>
-                          </div>
-                          <div>
-                            <label className="block text-[9px] text-[#5A6278] uppercase font-bold mb-1">
-                              Channel
-                            </label>
-                            <input
-                              type="number"
-                              placeholder="Ch (e.g. 1)"
-                              value={a.yamaha_channel || ""}
-                              onChange={(e) =>
-                                updateAction(
-                                  idx,
-                                  "yamaha_channel",
-                                  parseInt(e.target.value),
-                                )
-                              }
-                              style={inputStyle}
-                            />
-                          </div>
-                          <div>
-                            <label className="block text-[9px] text-[#5A6278] uppercase font-bold mb-1">
-                              Value
-                            </label>
-                            <input
-                              type="text"
-                              placeholder="e.g. -1000 or 1"
-                              value={a.parameter_value || ""}
-                              onChange={(e) =>
-                                updateAction(
-                                  idx,
-                                  "parameter_value",
-                                  e.target.value,
-                                )
-                              }
-                              style={{ ...inputStyle, fontFamily: "monospace" }}
-                            />
-                          </div>
-                        </>
-                      ) : (
-                        <>
-                          <div>
-                            <label className="block text-[9px] text-[#5A6278] uppercase font-bold mb-1">
-                              Function
-                            </label>
-                            <select
-                              value={a.vmix_function || "SetVolume"}
-                              onChange={(e) =>
-                                updateAction(
-                                  idx,
-                                  "vmix_function",
-                                  e.target.value,
-                                )
-                              }
-                              style={inputStyle}
-                            >
-                              {Object.entries(VMIX_FN_LABELS).map(([v, l]) => (
-                                <option
-                                  key={v}
-                                  value={v}
-                                  style={{ background: "#151B27" }}
-                                >
-                                  {l}
-                                </option>
-                              ))}
-                            </select>
-                          </div>
-                          <div>
-                            <label className="block text-[9px] text-[#5A6278] uppercase font-bold mb-1">
-                              Input (Optional)
-                            </label>
-                            <input
-                              type="number"
-                              placeholder="Input (e.g. 1)"
-                              value={a.vmix_target_input || ""}
-                              onChange={(e) =>
-                                updateAction(
-                                  idx,
-                                  "vmix_target_input",
-                                  parseInt(e.target.value) || null,
-                                )
-                              }
-                              style={inputStyle}
-                            />
-                          </div>
-                        </>
-                      )}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            ) : (
-              <>
-                <Field label="Send To">
-                  <div className="flex rounded-lg overflow-hidden w-full">
-                    <Seg
-                      active={target === "yamaha"}
-                      onClick={() => onChange("action_target", "yamaha")}
-                    >
-                      <span className="flex items-center gap-1">
-                        <Speaker size={11} /> Yamaha
-                      </span>
-                    </Seg>
-                    <Seg
-                      active={target === "vmix"}
-                      onClick={() => onChange("action_target", "vmix")}
-                    >
-                      <span className="flex items-center gap-1">
-                        <MonitorSpeaker size={11} /> vMix
-                      </span>
-                    </Seg>
-                  </div>
-                </Field>
-
-                {target === "yamaha" ? (
-                  <Field label="Yamaha Command">
-                    <select
-                      value={yamahaCmd}
-                      onChange={(e) =>
-                        onChange("yamaha_command", e.target.value)
-                      }
-                      style={inputStyle}
-                    >
-                      {Object.entries(YAMAHA_CMD_LABELS).map(([v, l]) => (
-                        <option
-                          key={v}
-                          value={v}
-                          style={{ background: "#151B27" }}
-                        >
-                          {l}
-                        </option>
-                      ))}
-                    </select>
-                  </Field>
-                ) : (
-                  <Field label="vMix Function">
-                    <select
-                      value={vmixFn}
-                      onChange={(e) =>
-                        onChange("vmix_function", e.target.value)
-                      }
-                      style={inputStyle}
-                    >
-                      {Object.entries(VMIX_FN_LABELS).map(([v, l]) => (
-                        <option
-                          key={v}
-                          value={v}
-                          style={{ background: "#151B27" }}
-                        >
-                          {l}
-                        </option>
-                      ))}
-                    </select>
-                  </Field>
-                )}
-              </>
-            )}
-          </>
         )}
       </div>
     </div>
