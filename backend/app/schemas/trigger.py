@@ -64,13 +64,13 @@ class TriggerRuleBase(BaseModel):
         description="Time remaining threshold for vMix video playback (e.g., '00:01:00')",
     )
     is_multi_duck: bool = Field(
-        False, description="Multi-mic duck rule with per-channel actions"
+        True, description="Multi-mic duck rule with per-channel actions"
     )
     duck_members: Optional[List[DuckMemberConfig]] = Field(
-        None, description="Per-mic duck configuration"
+        [], description="Per-mic duck configuration"
     )
-    is_multi_action: bool = Field(False, description="Multi-action rule")
-    actions: Optional[List[ActionConfig]] = Field(None, description="List of actions")
+    is_multi_action: bool = Field(True, description="Multi-action rule")
+    actions: Optional[List[ActionConfig]] = Field([], description="List of actions")
 
     action_target: str = Field("yamaha", description="'yamaha' or 'vmix'")
     yamaha_command: str = Field(

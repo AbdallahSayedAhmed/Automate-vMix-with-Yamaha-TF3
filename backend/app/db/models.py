@@ -35,10 +35,10 @@ class TriggerRule(Base):
     release_threshold = Column(Integer, nullable=True) # Secondary threshold for hysteresis
     silence_timeout_ms = Column(Integer, nullable=True)
     time_threshold = Column(String, nullable=True) # e.g., '00:01:00'
-    is_multi_duck = Column(Boolean, nullable=False, default=False)
-    duck_members = Column(String, nullable=True)  # JSON array of per-mic duck configs
-    is_multi_action = Column(Boolean, nullable=False, default=False)
-    actions = Column(String, nullable=True)  # JSON array of ActionConfig
+    is_multi_duck = Column(Boolean, nullable=False, default=True)
+    duck_members = Column(String, nullable=True, default="[]")  # JSON array of per-mic duck configs
+    is_multi_action = Column(Boolean, nullable=False, default=True)
+    actions = Column(String, nullable=True, default="[]")  # JSON array of ActionConfig
     
     # ── Target (Execute) ──────────────────────────────────
     action_target = Column(String, nullable=False, default='yamaha')

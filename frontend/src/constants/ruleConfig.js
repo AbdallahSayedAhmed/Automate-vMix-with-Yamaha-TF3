@@ -150,10 +150,37 @@ export const DEFAULT_RULE_FORM = {
   parameter_value: "0",
   delay_ms: 0,
   is_active: true,
-  is_multi_duck: false,
-  duck_members: [],
-  is_multi_action: false,
-  actions: [],
+  is_multi_duck: true,
+  duck_members: [
+    {
+      monitor_channel: 1,
+      threshold: -4000,
+      release_threshold: -5000,
+      attack_ms: 700,
+      release_ms: 700,
+      action_target: "yamaha",
+      yamaha_command: "InCh/Fader/Smooth",
+      yamaha_channel: 1,
+      yamaha_mix: 0,
+      vmix_function: "SetVolume",
+      vmix_target_input: null,
+      parameter_value: "-2000",
+      actions: [],
+    },
+  ],
+  is_multi_action: true,
+  actions: [
+    {
+      action_target: "yamaha",
+      yamaha_command: "InCh/Fader/Level",
+      yamaha_channel: 1,
+      yamaha_mix: 0,
+      vmix_function: "SetVolume",
+      vmix_target_input: null,
+      parameter_value: "0",
+      delay_ms: 0,
+    },
+  ],
 };
 
 export const DEFAULT_PRESETS = [
