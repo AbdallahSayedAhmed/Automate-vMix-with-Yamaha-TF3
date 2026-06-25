@@ -1,17 +1,39 @@
-﻿node_modules/
+﻿# Frontend & Build Outputs
+node_modules/
 npm-debug.log*
-.env
-.env.local
 dist/
 build/
 out/
 release/
 *.exe
+frontend/dist_electron/
+
+# Python & Backend
+**/__pycache__/
+*.pyc
+*.pyo
+*.pyd
+backend/.venv/
+backend/venv/
+.venv/
+venv/
+
+# Database
+backend/bridge.db
+
+# Environment Secrets & Configs
+.env
+.env.local
+.env.*.local
+
+# Logs and system files
 logs/
 *.log
 .DS_Store
 Thumbs.db
-.vscode/
-.idea/
 *.tmp
 *.temp
+
+# IDEs and editors
+.vscode/
+.idea/
