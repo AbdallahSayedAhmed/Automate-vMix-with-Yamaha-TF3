@@ -1,0 +1,19 @@
+directories:
+  output: dist_electron
+  buildResources: build
+appId: com.vmixyamahabridge.app
+productName: vMix-Yamaha Bridge
+asar: false
+win:
+  target: dir
+  icon: public/program-image.ico
+files:
+  - filter:
+      - dist/**/*
+      - electron-main.js
+      - electron-preload.js
+      - package.json
+extraResources:
+  - from: ../backend/dist/backend.exe
+    to: ../backend.exe
+electronVersion: 33.4.11
