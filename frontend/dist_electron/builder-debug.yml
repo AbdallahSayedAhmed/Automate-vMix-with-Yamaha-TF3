@@ -5,7 +5,7 @@ x64:
     - '!dist_electron{,/**/*}'
     - dist/**/*
     - electron-main.js
-    - electron-preload.js
+    - electron-preload.cjs
     - package.json
     - '!**/*.{iml,hprof,orig,pyc,pyo,rbc,swp,csproj,sln,suo,xproj,cc,d.ts,mk,a,o,forge-meta,pdb}'
     - '!**/._*'
@@ -18,5 +18,5 @@ x64:
     - '**/*'
     - dist/**/*
     - electron-main.js
-    - electron-preload.js
+    - electron-preload.cjs
     - package.json

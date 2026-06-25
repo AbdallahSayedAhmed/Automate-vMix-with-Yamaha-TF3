@@ -3,7 +3,7 @@
 ; ============================================================
 
 #define MyAppName      "vMix-Yamaha TF3 Bridge"
-#define MyAppVersion   "1.1.0"
+#define MyAppVersion   "1.5.0"
 #define MyAppPublisher "vMix-Yamaha Bridge"
 #define MyAppExeName   "vMix-Yamaha Bridge.exe"
 

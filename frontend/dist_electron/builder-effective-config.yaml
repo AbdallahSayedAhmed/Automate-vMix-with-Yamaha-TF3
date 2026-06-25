@@ -11,9 +11,9 @@ files:
   - filter:
       - dist/**/*
       - electron-main.js
-      - electron-preload.js
+      - electron-preload.cjs
       - package.json
 extraResources:
   - from: ../backend/dist/backend.exe
     to: ../backend.exe
-electronVersion: 33.4.11
+electronVersion: 42.4.1
