@@ -14,6 +14,7 @@ from app.core.config import settings
 from app.db.database import engine as db_engine, Base
 from app.api import triggers, websocket, vmix_inputs, settings as settings_api, duck_groups
 import asyncio
+import os
 
 from app.drivers import vmix_tcp, yamaha_tcp
 
@@ -176,4 +177,6 @@ if __name__ == "__main__":
     import uvicorn
     import multiprocessing
     multiprocessing.freeze_support()
-    uvicorn.run(app, host="127.0.0.1", port=8000)
+    backend_host = os.environ.get("BRIDGE_BACKEND_HOST", "127.0.0.1")
+    backend_port = int(os.environ.get("BRIDGE_BACKEND_PORT", "8000"))
+    uvicorn.run(app, host=backend_host, port=backend_port)

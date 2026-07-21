@@ -1,7 +1,9 @@
 import { app, BrowserWindow, dialog, screen, ipcMain, shell, Tray, Menu, globalShortcut } from 'electron';
 import path from 'path';
+import fs from 'fs';
 import { spawn } from 'child_process';
 import http from 'http';
+import net from 'net';
 import { fileURLToPath } from 'url';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -10,6 +12,10 @@ const __dirname = path.dirname(__filename);
 let mainWindow = null;
 let backendProcess = null;
 let tray = null;
+let backendPort = 8000;
+let backendUrl = `http://127.0.0.1:${backendPort}`;
+
+const BACKEND_HOST = '127.0.0.1';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 function getIconPath() {
@@ -18,33 +24,155 @@ function getIconPath() {
     : path.join(__dirname, 'public', 'program-image.ico');
 }
 
-// ─── Backend ──────────────────────────────────────────────────────────────────
-function startBackend() {
-  if (!app.isPackaged) {
-    return Promise.resolve();
+function getInstallDir() {
+  return app.isPackaged
+    ? path.resolve(process.resourcesPath, '..')
+    : path.resolve(__dirname, '..');
+}
+
+function writeBridgeLog(message) {
+  try {
+    const timestamp = new Date().toISOString().replace('T', ' ').replace('Z', '');
+    fs.appendFileSync(path.join(getInstallDir(), 'bridge.log'), `${timestamp} | ${message}\n`, 'utf8');
+  } catch (err) {
+    console.error('Could not write bridge log:', err);
   }
-  const backendExePath = path.join(process.resourcesPath, '..', 'backend.exe');
-  backendProcess = spawn(backendExePath, [], {
-    detached: false,
-    stdio: 'ignore',
+}
+
+function delay(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function isPortAvailable(port) {
+  return new Promise((resolve) => {
+    const server = net.createServer();
+    let settled = false;
+
+    const finish = (available) => {
+      if (settled) return;
+      settled = true;
+      resolve(available);
+    };
+
+    server.once('error', () => finish(false));
+    server.once('listening', () => {
+      server.close(() => finish(true));
+    });
+
+    server.listen(port, BACKEND_HOST);
   });
-  return new Promise((resolve, reject) => {
-    let retries = 0;
-    const interval = setInterval(() => {
-      http.get('http://127.0.0.1:8000/api/health', (res) => {
-        if (res.statusCode === 200) {
-          clearInterval(interval);
-          resolve();
+}
+
+async function findAvailableBackendPort(startPort = 8000, attempts = 50) {
+  for (let offset = 0; offset < attempts; offset++) {
+    const candidate = startPort + offset;
+    if (await isPortAvailable(candidate)) {
+      return candidate;
+    }
+    writeBridgeLog(`Port ${candidate} is busy; trying the next port.`);
+  }
+
+  throw new Error(`No available local port found between ${startPort} and ${startPort + attempts - 1}.`);
+}
+
+function checkBackendHealth() {
+  return new Promise((resolve) => {
+    let settled = false;
+
+    const finish = (healthy) => {
+      if (settled) return;
+      settled = true;
+      resolve(healthy);
+    };
+
+    const req = http.get(`${backendUrl}/api/health`, (res) => {
+      let body = '';
+      res.setEncoding('utf8');
+      res.on('data', (chunk) => {
+        body += chunk;
+      });
+      res.on('end', () => {
+        if (res.statusCode !== 200) {
+          finish(false);
+          return;
         }
-      }).on('error', () => {
-        retries++;
-        if (retries > 30) {
-          clearInterval(interval);
-          reject(new Error('Backend failed to start after 30 seconds.'));
+
+        try {
+          const health = JSON.parse(body);
+          finish(health.status === 'ok' && health.frontend_ready !== false);
+        } catch {
+          finish(true);
         }
       });
-    }, 1000);
+    });
+
+    req.setTimeout(2000, () => {
+      req.destroy();
+      finish(false);
+    });
+    req.on('error', () => finish(false));
   });
+}
+
+async function waitForBackend(timeoutSeconds = 30) {
+  for (let attempt = 1; attempt <= timeoutSeconds; attempt++) {
+    if (backendProcess && backendProcess.exitCode !== null) {
+      throw new Error(`Backend exited during startup with code ${backendProcess.exitCode}.`);
+    }
+
+    if (await checkBackendHealth()) {
+      writeBridgeLog(`Backend became ready on ${backendUrl}.`);
+      return;
+    }
+
+    await delay(1000);
+  }
+
+  throw new Error(`Backend failed to start after ${timeoutSeconds} seconds on ${backendUrl}.`);
+}
+
+// ─── Backend ──────────────────────────────────────────────────────────────────
+async function startBackend() {
+  if (!app.isPackaged) {
+    return;
+  }
+
+  const installDir = getInstallDir();
+  const backendExePath = path.join(installDir, 'backend.exe');
+  const backendLogPath = path.join(installDir, 'backend.log');
+
+  backendPort = await findAvailableBackendPort(8000);
+  backendUrl = `http://${BACKEND_HOST}:${backendPort}`;
+
+  writeBridgeLog(`Starting backend: ${backendExePath}`);
+  writeBridgeLog(`Backend URL: ${backendUrl}`);
+  writeBridgeLog(`Backend working directory: ${installDir}`);
+
+  const backendLogStream = fs.createWriteStream(backendLogPath, { flags: 'a' });
+  backendLogStream.write(`\n==== Backend start ${new Date().toISOString()} on ${backendUrl} ====\n`);
+
+  backendProcess = spawn(backendExePath, [], {
+    cwd: installDir,
+    detached: false,
+    stdio: ['ignore', 'pipe', 'pipe'],
+    windowsHide: true,
+    env: {
+      ...process.env,
+      BRIDGE_BACKEND_HOST: BACKEND_HOST,
+      BRIDGE_BACKEND_PORT: String(backendPort),
+    },
+  });
+
+  backendProcess.stdout?.on('data', (data) => backendLogStream.write(data));
+  backendProcess.stderr?.on('data', (data) => backendLogStream.write(data));
+  backendProcess.on('exit', (code, signal) => {
+    backendLogStream.write(`\n==== Backend exited code=${code} signal=${signal} ${new Date().toISOString()} ====\n`);
+    backendLogStream.end();
+    writeBridgeLog(`Backend exited with code=${code} signal=${signal}.`);
+  });
+
+  writeBridgeLog(`Backend process started with PID ${backendProcess.pid}.`);
+  await waitForBackend(30);
 }
 
 // ─── Main Window ──────────────────────────────────────────────────────────────
@@ -100,7 +228,7 @@ function createWindow() {
   });
 
   if (app.isPackaged) {
-    mainWindow.loadURL('http://127.0.0.1:8000/');
+    mainWindow.loadURL(`${backendUrl}/`);
   } else {
     mainWindow.loadURL('http://localhost:5173/');
   }
@@ -158,21 +286,21 @@ async function restartBackend() {
   if (backendProcess) {
     backendProcess.kill();
     backendProcess = null;
+    await delay(500);
   }
   try {
     await startBackend();
-    if (mainWindow) mainWindow.reload();
+    if (mainWindow) mainWindow.loadURL(`${backendUrl}/`);
   } catch (err) {
     dialog.showErrorBox('Restart Failed', 'The backend failed to restart.\n\n' + err.message);
   }
 }
 
 function openLogs() {
-  const installDir = app.isPackaged
-    ? path.join(process.resourcesPath, '..')
-    : path.join(__dirname, '..', 'installer');
+  const installDir = getInstallDir();
   shell.openPath(path.join(installDir, 'install.log')).catch(console.error);
   shell.openPath(path.join(installDir, 'bridge.log')).catch(console.error);
+  shell.openPath(path.join(installDir, 'backend.log')).catch(console.error);
 }
 
 function showAppContextMenu() {
@@ -216,24 +344,40 @@ function registerShortcuts() {
 }
 
 // ─── App lifecycle ─────────────────────────────────────────────────────────────
-app.whenReady().then(async () => {
-  Menu.setApplicationMenu(null);
-  try {
-    await startBackend();
-    createWindow();
+const gotSingleInstanceLock = app.requestSingleInstanceLock();
+
+if (!gotSingleInstanceLock) {
+  app.quit();
+} else {
+  app.on('second-instance', () => {
+    if (mainWindow) {
+      if (mainWindow.isMinimized()) mainWindow.restore();
+      mainWindow.show();
+      mainWindow.focus();
+    }
+  });
+
+  app.whenReady().then(async () => {
+    Menu.setApplicationMenu(null);
     setupIPC();
     createTray();
     registerShortcuts();
-  } catch (err) {
-    console.error(err);
-    dialog.showErrorBox('Failed to start', 'The backend server failed to start.\n\n' + err.message);
-    app.quit();
-  }
 
-  app.on('activate', () => {
-    if (BrowserWindow.getAllWindows().length === 0) createWindow();
+    try {
+      await startBackend();
+      createWindow();
+    } catch (err) {
+      console.error(err);
+      writeBridgeLog(`Startup failed: ${err.message}`);
+      dialog.showErrorBox('Failed to start', 'The backend server failed to start.\n\n' + err.message);
+      app.quit();
+    }
+
+    app.on('activate', () => {
+      if (BrowserWindow.getAllWindows().length === 0) createWindow();
+    });
   });
-});
+}
 
 app.on('window-all-closed', () => {
   if (process.platform === 'darwin') app.quit();
@@ -242,4 +386,5 @@ app.on('window-all-closed', () => {
 app.on('will-quit', () => {
   globalShortcut.unregisterAll();
   if (backendProcess) backendProcess.kill();
+  if (tray) tray.destroy();
 });

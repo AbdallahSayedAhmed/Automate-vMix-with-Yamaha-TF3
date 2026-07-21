@@ -5,8 +5,20 @@ All connection parameters for vMix and Yamaha TF3 are configurable
 via environment variables or a `.env` file in the backend root.
 """
 
+from pathlib import Path
+import sys
+
 from pydantic_settings import BaseSettings
 from pydantic import Field
+
+
+if getattr(sys, "frozen", False):
+    RUNTIME_ROOT = Path(sys.executable).resolve().parent
+else:
+    RUNTIME_ROOT = Path(__file__).resolve().parents[2]
+
+ENV_FILE = RUNTIME_ROOT / ".env"
+DEFAULT_DATABASE_URL = f"sqlite+aiosqlite:///{(RUNTIME_ROOT / 'bridge.db').as_posix()}"
 
 
 class Settings(BaseSettings):
@@ -18,7 +30,7 @@ class Settings(BaseSettings):
 
     # ── Database ─────────────────────────────────────────────────
     database_url: str = Field(
-        default="sqlite+aiosqlite:///./bridge.db",
+        default=DEFAULT_DATABASE_URL,
         description="Async SQLAlchemy connection string for the SQLite database.",
     )
 
@@ -67,7 +79,7 @@ class Settings(BaseSettings):
     )
 
     model_config = {
-        "env_file": ".env",
+        "env_file": str(ENV_FILE),
         "env_file_encoding": "utf-8",
         "case_sensitive": False,
     }
